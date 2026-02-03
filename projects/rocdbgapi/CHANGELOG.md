@@ -3,12 +3,14 @@
 Full documentation for AMD Debugger API is available at
 [rocm.docs.amd.com/rocdbgapi](https://rocm.docs.amd.com/projects/ROCdbgapi/en/latest/index.html).
 
-## rocm-dbgapi-0.78 for ROCm-X
-
+## rocm-dbgapi-0.80 for ROCm-X
 ### Added
 - Initial support to debug HIP applications on Windows OS.  Windows is
   supported only on the gfx120x architectures (gfx1200 and gfx1201) with no
   support for multi-GPU configurations.
+- amd_dbgapi_process_get_info() adds a new query to get a mask spanning
+  over all the bits used by all the address spaces.  The query is called
+  `AMD_DBGAPI_PROCESS_INFO_SIGNIFICANT_ADDRESS_BITS`.
 
 ### Changed
 - The `amd_dbgapi_read_memory` and `amd_dbgapi_write_memory` methods can return
