@@ -145,6 +145,88 @@ void TimeStamp::TimeStampTest (void) {
         } //switch ends.
     } //for loop iterating over agent_pools ends
 }
+ 
+void TimeStamp::BarrierPacketTimestampValidationTest(void) {
+  const int NUM_BARRIERS = 100;
+  PrinTimeStampSubtestHeader("BarrierPacketTimestampValidationTest:test to verify timestamps in AQL packets");
+  hsa_status_t err;
+  // find all cpu agents
+  std::vector<hsa_agent_t> cpus;
+  err = hsa_iterate_agents(rocrtst::IterateCPUAgents, &cpus);
+  ASSERT_EQ(err, HSA_STATUS_SUCCESS);
+  // find all gpu agents
+  std::vector<hsa_agent_t> gpus;
+  err = hsa_iterate_agents(rocrtst::IterateGPUAgents, &gpus);
+  ASSERT_EQ(err, HSA_STATUS_SUCCESS);
 
+  // - allocate queue
+  hsa_queue_t *queue = NULL;
+  uint32_t queue_size = 0;
+
+  ASSERT_SUCCESS(hsa_agent_get_info(gpus[0], HSA_AGENT_INFO_QUEUE_MAX_SIZE, &queue_size));
+
+  err = hsa_queue_create(gpus[0], queue_size, HSA_QUEUE_TYPE_SINGLE, nullptr, nullptr, 0, 0, &queue);
+  ASSERT_EQ(err, HSA_STATUS_SUCCESS);
+  // Enable profiling on the queue to collect timestamps
+  err = hsa_amd_profiling_set_profiler_enabled(queue, 1);
+  ASSERT_EQ(err, HSA_STATUS_SUCCESS);
+  std::cout << "Profiling enabled on queue" << std::endl;
+
+  // - Create new signals
+  // - Create a completion signal for the barrier packet
+  hsa_signal_t completion_signals[NUM_BARRIERS] = {0};
+  for (int i = 0; i < NUM_BARRIERS; ++i) {
+    err = hsa_signal_create(1, 0, NULL, &completion_signals[i]);
+    ASSERT_EQ(err, HSA_STATUS_SUCCESS);
+  }
+
+  std::cout << "Submitting " << NUM_BARRIERS << " barrier packets..." << std::endl;
+
+  // Submit 100 barrier packets
+  for (int i = 0; i < NUM_BARRIERS; ++i) {
+    // Create a Barrier-AND packet
+    // - Place a Barrier-Value packet into the queue
+    hsa_barrier_and_packet_t barrier_pkt;
+    memset(&barrier_pkt, 0, sizeof(barrier_pkt));
+    barrier_pkt.header = HSA_PACKET_TYPE_BARRIER_AND | (1 << HSA_PACKET_HEADER_BARRIER);
+    barrier_pkt.completion_signal = completion_signals[i];
+
+    // Get the write index and reserve a slot in the queue
+    uint64_t index = hsa_queue_load_write_index_relaxed(queue);
+    hsa_queue_store_write_index_relaxed(queue, index + 1);
+    reinterpret_cast<hsa_barrier_and_packet_t*>(queue->base_address)[index % queue->size] = barrier_pkt;
+
+    hsa_signal_store_relaxed(queue->doorbell_signal, index);
+  }
+  std::cout << "Waiting for barrier packets to complete..." << std::endl;
+
+  hsa_amd_profiling_dispatch_time_t dispatch_times[NUM_BARRIERS];
+  // - Wait for the completion-signals to change from 1 to 0.
+  // Wait for the last barriers to complete and collect timing data
+  while (hsa_signal_wait_scacquire(completion_signals[NUM_BARRIERS - 1],
+      HSA_SIGNAL_CONDITION_LT, 1, (uint64_t)-1, HSA_WAIT_STATE_ACTIVE)) {}
+  for (int i = 0; i < NUM_BARRIERS; ++i) {
+    // Get the dispatch time for this barrier packet
+    err = hsa_amd_profiling_get_dispatch_time(gpus[0], completion_signals[i], &dispatch_times[i]);
+    ASSERT_EQ(err, HSA_STATUS_SUCCESS);
+    // Asset failures for Incorrect timestamps.
+    ASSERT_GE(dispatch_times[i].end, dispatch_times[i].start);
+    if(i > 0) {
+       ASSERT_GE(dispatch_times[i].start, dispatch_times[i - 1].end);
+    }
+    if (verbosity() > 0) {
+      std::cout << "Barrier " << i << " - Start: " << dispatch_times[i].start
+              << ", End: " << dispatch_times[i].end
+              << ", Duration: " << (dispatch_times[i].end - dispatch_times[i].start)
+              << " ticks" << std::endl;
+    }
+    if (completion_signals[i].handle) {
+      hsa_signal_destroy(completion_signals[i]);
+    }
+  }
+
+  if (queue)
+    hsa_queue_destroy(queue);
+}
 
 #undef RET_IF_HSA_ERR

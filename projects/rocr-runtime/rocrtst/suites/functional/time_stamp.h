@@ -35,6 +35,8 @@ class TimeStamp : public TestBase {
 
   void TimeStampTest (void);
 
+  void BarrierPacketTimestampValidationTest(void);
+
 };
 
 #endif  // ROCRTST_SUITES_FUNCTIONAL_TIME_STAMP_H_
