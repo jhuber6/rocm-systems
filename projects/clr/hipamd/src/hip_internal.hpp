@@ -196,13 +196,22 @@ const char* ihipGetErrorName(hipError_t hip_error);
     HIP_RETURN(hipErrorStreamCaptureUnsupported);                                                  \
   }
 
-// Helper: invalidate all capturing streams and return an error code.
+// Helper: invalidate all capturing streams visible to the calling thread and return an error.
 #define INVALIDATE_ALL_CAPTURING_AND_RETURN(err)                                                   \
-  if (!g_allCapturingStreams.empty()) {                                                            \
-    for (auto stream : g_allCapturingStreams) {                                                    \
+  {                                                                                                \
+    bool _should_return = false;                                                                   \
+    for (auto stream : hip::tls.capture_streams_) {                                               \
       stream->SetCaptureStatus(hipStreamCaptureStatusInvalidated);                                 \
+      _should_return = true;                                                                       \
     }                                                                                              \
-    return err;                                                                                    \
+    {                                                                                              \
+      amd::ScopedLock lock(g_captureStreamsLock);                                                  \
+      for (auto stream : g_captureStreams) {                                                       \
+        stream->SetCaptureStatus(hipStreamCaptureStatusInvalidated);                               \
+        _should_return = true;                                                                     \
+      }                                                                                            \
+    }                                                                                              \
+    if (_should_return) return err;                                                                \
   }
 
 // Device sync is not supported during capture.
