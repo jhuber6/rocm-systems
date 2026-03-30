@@ -27,6 +27,13 @@ interceptor_via_fun:boost::*
 interceptor_via_lib:libdw.so
 interceptor_via_lib:libpfm.so
 
+# OpenMPI
+interceptor_via_lib:libopen-rte.so
+interceptor_via_lib:libopen-pal.so
+interceptor_via_lib:libhwloc.so
+interceptor_via_lib:libevent_core-2.1.so
+interceptor_via_lib:libevent_core.so
+
 # ROCm libraries (when present)
 interceptor_via_lib:libamd_comgr.so
 interceptor_via_lib:libhsa-runtime64.so
