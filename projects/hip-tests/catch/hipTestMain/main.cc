@@ -12,7 +12,9 @@ CmdOptions cmd_options;
 
 int main(int argc, char** argv) {
   auto& context = TestContext::get(argc, argv);
-  context.skipTest();
+  if (context.skipTest()) {
+    return 0;
+  }
 
   Catch::Session session;
 
