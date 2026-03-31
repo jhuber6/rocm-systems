@@ -1504,7 +1504,6 @@ class AccumulateCommand : public Command {
     if (hw_event != nullptr) {
       Device* dev = (device != nullptr) ? device : const_cast<Device*>(device_);
       if (dev != nullptr) {
-        dev->RetainGlobalSignal(hw_event);
         hw_events_[dev].push_back(hw_event);
       }
     }
