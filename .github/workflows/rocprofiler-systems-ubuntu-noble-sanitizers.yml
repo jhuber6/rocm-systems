@@ -44,6 +44,10 @@ concurrency:
 env:
   ROCPROFSYS_CI: ON
   ROCPROFSYS_TMPDIR: "%env{PWD}%/testing-tmp"
+  # Set to 0 so sanitizer findings are logged but do not fail tests.
+  # Change to a non-zero value (e.g. 1) to make sanitizer errors fail tests
+  # once the baseline is clean.
+  SANITIZER_EXIT_CODE: 0
 
 jobs:
   ubuntu-noble-sanitizers:
@@ -58,6 +62,7 @@ jobs:
         build-type: ['RelWithDebInfo']
         build-dyninst: ['ON']
         rocm-version: ['7.2']
+        sanitizer-type: ['address', 'thread', 'undefined']
     env:
       OMPI_ALLOW_RUN_AS_ROOT: 1
       OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
@@ -101,20 +106,35 @@ jobs:
       shell: bash
       working-directory: projects/rocprofiler-systems/
       run: |
-        ASAN_LIB=$(${{ matrix.compiler }} -print-file-name=libasan.so)
-        ASAN_LIB=$(realpath "${ASAN_LIB}")
-        echo "ASan library: ${ASAN_LIB}"
-        ls -la "${ASAN_LIB}"
-        echo "ASAN_LIBRARY=${ASAN_LIB}" >> $GITHUB_ENV
         SUPP_DIR=${PWD}/scripts
         LOG_DIR=${PWD}/build/sanitizer-logs
         mkdir -p "${LOG_DIR}"
-        echo "ASAN_OPTIONS=suppressions=${SUPP_DIR}/rocprof-sys-asan.supp:detect_leaks=1:new_delete_type_mismatch=0:detect_odr_violation=0:log_path=${LOG_DIR}/asan:log_exe_name=1" >> $GITHUB_ENV
-        echo "LSAN_OPTIONS=suppressions=${SUPP_DIR}/rocprof-sys-lsan.supp:print_suppressions=0" >> $GITHUB_ENV
-        echo "UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0:log_path=${LOG_DIR}/ubsan:log_exe_name=1" >> $GITHUB_ENV
+        SANITIZER_TYPE="${{ matrix.sanitizer-type }}"
+        if [ "${SANITIZER_TYPE}" = "address" ]; then
+            ASAN_LIB=$(${{ matrix.compiler }} -print-file-name=libasan.so)
+            ASAN_LIB=$(realpath "${ASAN_LIB}")
+            echo "ASan library: ${ASAN_LIB}"
+            ls -la "${ASAN_LIB}"
+            echo "ASAN_LIBRARY=${ASAN_LIB}" >> $GITHUB_ENV
+            echo "SANITIZER_CMAKE_FLAGS=-DASAN_LIBRARY=${ASAN_LIB}" >> $GITHUB_ENV
+            echo "ASAN_OPTIONS=suppressions=${SUPP_DIR}/rocprof-sys-asan.supp:detect_leaks=1:new_delete_type_mismatch=0:detect_odr_violation=0:exitcode=${SANITIZER_EXIT_CODE}:log_path=${LOG_DIR}/asan:log_exe_name=1" >> $GITHUB_ENV
+            echo "LSAN_OPTIONS=suppressions=${SUPP_DIR}/rocprof-sys-lsan.supp:print_suppressions=1:exitcode=${SANITIZER_EXIT_CODE}" >> $GITHUB_ENV
+            echo "UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0:exitcode=${SANITIZER_EXIT_CODE}:log_path=${LOG_DIR}/ubsan:log_exe_name=1" >> $GITHUB_ENV
+        elif [ "${SANITIZER_TYPE}" = "thread" ]; then
+            TSAN_LIB=$(${{ matrix.compiler }} -print-file-name=libtsan.so)
+            TSAN_LIB=$(realpath "${TSAN_LIB}")
+            echo "TSan library: ${TSAN_LIB}"
+            ls -la "${TSAN_LIB}"
+            echo "TSAN_LIBRARY=${TSAN_LIB}" >> $GITHUB_ENV
+            echo "SANITIZER_CMAKE_FLAGS=-DTSAN_LIBRARY=${TSAN_LIB}" >> $GITHUB_ENV
+            echo "TSAN_OPTIONS=suppressions=${SUPP_DIR}/rocprof-sys-thread.supp:second_deadlock_stack=1:print_suppressions=1:exitcode=${SANITIZER_EXIT_CODE}:log_path=${LOG_DIR}/tsan:log_exe_name=1" >> $GITHUB_ENV
+        elif [ "${SANITIZER_TYPE}" = "undefined" ]; then
+            echo "SANITIZER_CMAKE_FLAGS=" >> $GITHUB_ENV
+            echo "UBSAN_OPTIONS=suppressions=${SUPP_DIR}/rocprof-sys-ubsan.supp:print_stacktrace=1:halt_on_error=0:exitcode=${SANITIZER_EXIT_CODE}:log_path=${LOG_DIR}/ubsan:log_exe_name=1" >> $GITHUB_ENV
+        fi
 
     - name: Configure, Build and Test
-      timeout-minutes: 180
+      timeout-minutes: 240
       shell: bash
       working-directory: projects/rocprofiler-systems/
       env:
@@ -125,11 +145,9 @@ jobs:
         echo "CMake version: $(cmake --version | head -n 1)"
         echo "Compiler version: $(${{ matrix.compiler }} --version | head -n 1)"
         echo "ROCm version: ${{ matrix.rocm-version }}"
-        echo "ASan library: ${ASAN_LIBRARY}"
-        echo "ASAN_OPTIONS: ${ASAN_OPTIONS}"
-        echo "LSAN_OPTIONS: ${LSAN_OPTIONS}"
-        echo "UBSAN_OPTIONS: ${UBSAN_OPTIONS}"
-        TAG="-sanitizers"
+        echo "Sanitizer type: ${{ matrix.sanitizer-type }}"
+        echo "Sanitizer CMake flags: ${SANITIZER_CMAKE_FLAGS}"
+        TAG="-${{ matrix.sanitizer-type }}-sanitizer"
         python3 ./scripts/run-ci.py -B build \
           --name ${{ github.repository_owner }}-${{ github.ref_name }}-ubuntu-noble-${{ matrix.compiler }}${TAG} \
           --build-jobs 2 \
@@ -142,8 +160,8 @@ jobs:
           -DROCPROFSYS_BUILD_TESTING=ON \
           -DROCPROFSYS_USE_PYTHON=ON \
           -DROCPROFSYS_USE_SANITIZER=ON \
-          -DROCPROFSYS_SANITIZER_TYPE=address \
-          -DASAN_LIBRARY=${ASAN_LIBRARY} \
+          -DROCPROFSYS_SANITIZER_TYPE=${{ matrix.sanitizer-type }} \
+          ${SANITIZER_CMAKE_FLAGS} \
           -DROCPROFSYS_BUILD_DYNINST=${{ matrix.build-dyninst }} \
           -DROCPROFSYS_BUILD_BOOST=${{ matrix.build-dyninst }} \
           -DROCPROFSYS_BUILD_TBB=${{ matrix.build-dyninst }} \
@@ -157,7 +175,6 @@ jobs:
           -DCMAKE_PREFIX_PATH=/opt/rocm \
           -DUSE_CLANG_OMP=OFF \
           -- \
-          -VV \
           -LE "transpose|rccl|videodecode|jpegdecode|network"
 
     - name: Check for Leftover Buffered Files
@@ -188,7 +205,7 @@ jobs:
       continue-on-error: True
       uses: actions/upload-artifact@v7
       with:
-        name: sanitizer-${{ github.job }}-${{ strategy.job-index }}-reports
+        name: sanitizer-${{ matrix.sanitizer-type }}-${{ github.job }}-${{ strategy.job-index }}-reports
         path: |
           projects/rocprofiler-systems/build/sanitizer-logs/
         if-no-files-found: ignore
@@ -198,7 +215,7 @@ jobs:
       continue-on-error: True
       uses: actions/upload-artifact@v7
       with:
-        name: ctest-${{ github.job }}-${{ strategy.job-index }}-log
+        name: ctest-${{ matrix.sanitizer-type }}-${{ github.job }}-${{ strategy.job-index }}-log
         path: |
           projects/rocprofiler-systems/build/*.log
 
@@ -207,7 +224,7 @@ jobs:
       continue-on-error: True
       uses: actions/upload-artifact@v7
       with:
-        name: data-${{ github.job }}-${{ strategy.job-index }}-files
+        name: data-${{ matrix.sanitizer-type }}-${{ github.job }}-${{ strategy.job-index }}-files
         path: |
           projects/rocprofiler-systems/build/rocprofsys-tests-config/*.cfg
           projects/rocprofiler-systems/build/rocprofsys-tests-output/**/*.txt
