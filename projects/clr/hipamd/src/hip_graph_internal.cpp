@@ -1162,9 +1162,15 @@ hipError_t GraphExec::CaptureAndFormPacketsForGraph() {
 
   // Process nodes from segments
   for (const auto& segment : segments_) {
-    // Skip segments that only contain a child graph metadata node
-    // Child graphs are processed recursively later
+    // Child-graph segments: create a SegmentBatch with leading + trailing empty batches
+    // so BuildSyncPlan can prepend dep barriers and append a completion barrier
     if (segment.child_graph_ptr != nullptr) {
+      auto [it, inserted] = segmentBatches_.emplace(segment.id, segment.id);
+      auto& childSegBatch = it->second;
+      childSegBatch.node_capture_status.resize(segment.nodes.size(), false);
+      childSegBatch.has_uncaptured_nodes = true;
+      childSegBatch.packet_batches.emplace_back();  // leading: dep barriers
+      childSegBatch.packet_batches.emplace_back();  // trailing: completion barrier
       continue;
     }
 
@@ -1239,17 +1245,14 @@ hipError_t GraphExec::CaptureAndFormPacketsForGraph() {
       }
     }
 
-    // If the last node is non-captured, ensure a trailing PacketBatch exists
-    // so BuildSyncPlan can append the completion barrier
+    // If the last node is non-captured, always create a dedicated trailing
+    // PacketBatch for the completion barrier. This must be separate from the
+    // leading batch (which holds dep barriers) to avoid the completion signal
+    // firing before uncaptured nodes execute.
     bool last_node_uncaptured = currentSegBatch.has_uncaptured_nodes &&
         !segment.nodes.empty() && !currentSegBatch.node_capture_status.back();
     if (last_node_uncaptured) {
-      bool needs_trailing = currentSegBatch.packet_batches.empty() ||
-          !currentSegBatch.packet_batches.back().dispatchPackets.empty() ||
-          !currentSegBatch.packet_batches.back().nodeRanges.empty();
-      if (needs_trailing) {
-        currentSegBatch.packet_batches.emplace_back();
-      }
+      currentSegBatch.packet_batches.emplace_back();
     }
   }
 
@@ -1543,8 +1546,9 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
   // and serves as the dispatch anchor for all segments across all streams.
   auto* graph_accumulate = new amd::AccumulateCommand(*launch_stream, {}, nullptr);
 
-  // Transfer HW event ownership to graph_accumulate for lifetime tracking.
-  // Signals are destroyed when ~AccumulateCommand runs after graph completion.
+  // Register HW events with graph_accumulate for lifetime tracking.
+  // addHwEvent does not retain — ownership transfers from CreateHwEvents
+  // to graph_accumulate. ~AccumulateCommand releases them after graph completion.
   for (auto& hw_event : segment_hw_events) {
     if (hw_event != nullptr) {
       graph_accumulate->addHwEvent(hw_event, device);
@@ -1624,43 +1628,6 @@ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream
 
   size_t batchIndex = 0;
 
-  // Handle child graph segments - recursively enqueue the entire child graph
-  if (segment.child_graph_ptr != nullptr) {
-    auto childGraphExec = dynamic_cast<GraphExec*>(segment.child_graph_ptr);
-    if (childGraphExec != nullptr) {
-      // Child graphs share the same kernel arg manager as parent (for packet capture)
-      if (childGraphExec->GetKernelArgManager() == nullptr) {
-        auto kernArgMgr = GetKernelArgManager();
-        if (kernArgMgr != nullptr) {
-          kernArgMgr->retain();  // Increment ref count for child's reference
-          childGraphExec->SetKernelArgManager(kernArgMgr);
-        }
-      }
-
-      // Recursively enqueue the child graph with its own dependency tracking
-      // Child graphs use their own parallel_streams_, so pass empty vector
-      hipError_t child_status = hipSuccess;
-      amd::Command* child_last_cmd =
-          childGraphExec->EnqueueSegmentedGraph(stream, {}, &child_status);
-
-      if (child_status != hipSuccess) {
-        ClPrint(amd::LOG_ERROR, amd::LOG_CODE,
-                "[hipGraph] EnqueueSegment: Failed to enqueue child graph, status=%d",
-                child_status);
-        return child_status;
-      }
-
-      // Child graph's work is already enqueued to the stream
-      // The returned last command tracks completion - release our reference
-      if (child_last_cmd != nullptr) {
-        child_last_cmd->release();
-      }
-    }
-
-    // Child graph segment has no regular nodes to process
-    return hipSuccess;
-  }
-
   // Lambda to dispatch the current batch at batchIndex
   auto dispatchCurrentBatch = [&]() -> hipError_t {
     if (!segBatch || batchIndex >= segBatch->packet_batches.size()) {
@@ -1699,6 +1666,49 @@ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream
     return hipSuccess;
   };
 
+  // Handle child graph segments - recursively enqueue the entire child graph
+  if (segment.child_graph_ptr != nullptr) {
+    // Dispatch dependency barriers before child graph execution
+    status = dispatchCurrentBatch();
+    if (status != hipSuccess) return status;
+
+    auto childGraphExec = dynamic_cast<GraphExec*>(segment.child_graph_ptr);
+    if (childGraphExec != nullptr) {
+      // Child graphs share the same kernel arg manager as parent (for packet capture)
+      if (childGraphExec->GetKernelArgManager() == nullptr) {
+        auto kernArgMgr = GetKernelArgManager();
+        if (kernArgMgr != nullptr) {
+          kernArgMgr->retain();
+          childGraphExec->SetKernelArgManager(kernArgMgr);
+        }
+      }
+
+      // Recursively enqueue the child graph with its own dependency tracking
+      hipError_t child_status = hipSuccess;
+      amd::Command* child_last_cmd =
+          childGraphExec->EnqueueSegmentedGraph(stream, {}, &child_status);
+
+      if (child_status != hipSuccess) {
+        ClPrint(amd::LOG_ERROR, amd::LOG_CODE,
+                "[hipGraph] EnqueueSegment: Failed to enqueue child graph, status=%d",
+                child_status);
+        return child_status;
+      }
+
+      if (child_last_cmd != nullptr) {
+        child_last_cmd->release();
+      }
+    }
+
+    // Dispatch completion barrier after child graph — signals parent's HW event
+    while (segBatch && batchIndex < segBatch->packet_batches.size()) {
+      status = dispatchCurrentBatch();
+      if (status != hipSuccess) return status;
+    }
+
+    return hipSuccess;
+  }
+
   // If the segment has uncaptured nodes and the first node is non-captured,
   // dispatch the first batch (dep barriers) before executing non-captured nodes
   bool first_node_uncaptured = segBatch && segBatch->has_uncaptured_nodes &&
@@ -1730,7 +1740,22 @@ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream
         if (status != hipSuccess) return status;
       }
     } else {
-      // Node doesn't support capture - execute individually
+      // Node doesn't support capture - execute individually.
+      // Pre-patched dispatch bypasses the Barriers() tracker (ActiveSignal is skipped).
+      // Enqueue Markers before and after the non-captured node to:
+      //   Before: resync the Barriers() tracker so releaseGpuMemoryFence/WaitCurrent
+      //           can track queue progress for the node's internal operations.
+      //   After:  ensure the node's commands (e.g. host node blocking callbacks) are
+      //           fully flushed to the HW queue before the next pre-patched batch is
+      //           dispatched, which writes directly to the HW queue.
+      if (pre_patched && batchIndex > 0) {
+        auto marker = new amd::Marker(*stream, kMarkerDisableFlush, {});
+        if (marker != nullptr) {
+          marker->enqueue();
+          marker->release();
+        }
+      }
+
       bool is_last_node = (i == segment.nodes.size() - 1);
       if (DEBUG_HIP_GRAPH_DOT_PRINT) {
         node->stream_id_ = stream->GetStreamId();
@@ -1742,6 +1767,14 @@ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream
         node->GetCommands().back()->SetProfiling();
       }
       node->EnqueueCommands(stream);
+
+      if (pre_patched) {
+        auto marker = new amd::Marker(*stream, kMarkerDisableFlush, {});
+        if (marker != nullptr) {
+          marker->enqueue();
+          marker->release();
+        }
+      }
     }
   }
 

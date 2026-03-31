@@ -1441,7 +1441,14 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
 
     processedPackets += batchSize;
 
-    TrackQueueProgress(*packets[processedPackets - 1], startIndex + batchSize - 1);
+    // Pre-patched packets use graph-owned signals that are not managed by this
+    // queue — only update the write index, skip signal tracking to avoid a
+    // dangling handle in last_completion_signal_ after graph signal destruction.
+    if (pre_patched) {
+      last_write_index_ = startIndex + batchSize - 1;
+    } else {
+      TrackQueueProgress(*packets[processedPackets - 1], startIndex + batchSize - 1);
+    }
     // Double the batch size for next iteration, cap at DEBUG_HIP_GRAPH_BATCH_SIZE
     if (batchSize < kMaxBatchSize) {
       batchSize *= 2;
