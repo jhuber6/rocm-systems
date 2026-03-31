@@ -247,10 +247,10 @@ bool TestContext::skipTest() const {
   // Direct Match
   auto flags = std::regex::ECMAScript;
   for (const auto& i : skip_test) {
-      auto regex = std::regex(i.c_str(), flags);
-      if (std::regex_match(current_test, regex)) {
+    auto regex = std::regex(i.c_str(), flags);
+    if (std::regex_match(current_test, regex)) {
       return true;
-      }
+    }
   }
   // TODO add test case skip as well
   return false;
