@@ -62,6 +62,33 @@ namespace rocshmem
   using std::vector;
 
   /**
+   * PCIe path types between GPU and NIC, ordered by increasing distance.
+   */
+  enum NicPathType {
+    NIC_PATH_PIX,   ///< Through a single PCIe switch
+    NIC_PATH_PXB,   ///< Through multiple PCIe switches (same root complex)
+    NIC_PATH_PHB,   ///< Through the PCIe host bridge (same NUMA node)
+    NIC_PATH_SYS,   ///< Across NUMA nodes
+  };
+
+  /**
+   * Parses a merge level string (PIX/PXB/PHB/SYS) into a NicPathType.
+   * Returns NIC_PATH_SYS if the string is unrecognized.
+   */
+  NicPathType ParseNicMergeLevel(const std::string &level_str);
+
+  /**
+   * Computes the PCIe path type between a GPU and a NIC.
+   *
+   * @param[in] gpuIndex Index of the GPU
+   * @param[in] nicBusId PCIe bus ID of the NIC (e.g. "0000:c1:00.0")
+   * @param[in] nicNuma  NUMA node of the NIC (-1 if unknown)
+   * @returns   One of NIC_PATH_PIX / PXB / PHB / SYS
+   */
+  NicPathType ComputeGpuNicPathType(int gpuIndex, const std::string &nicBusId, int nicNuma);
+
+
+  /**
    * Enumeration of GID priority
    *
    * @note These are the GID types ordered in priority from lowest (0) to highest
@@ -257,14 +284,31 @@ namespace rocshmem
   int GetClosestCpuNumaToNic(int nicIndex);
 
   /**
-   * Returns the index of the NIC closest to the given GPU
+   * Returns the closest NIC to the given GPU.
+   * Uses PCIe tree proximity with round-robin distribution when multiple GPUs
+   * share the same closest NIC. Results are cached on first call.
    *
-   * @param[in] gpuIndex Index of the GPU to query
-   * @param[in] hca_list Include list of device names that can be used (Exclude if prefixed by ^)
-   * @param[out] dev_name Name of of IB Verbs capable NIC index closest to GPU gpuIndex
-   * @returns index of IB Verbs capable NIC index closest to GPU gpuIndex, or -1 if unable to detect
+   * @param[in]  gpuIndex  Index of the GPU to query
+   * @param[in]  hca_list  Include/exclude list of device names (Exclude if prefixed by ^)
+   * @param[out] dev_name  If non-null, populated with the NIC device name
+   * @returns    NIC index in the IB device list, or -1 if not found
    */
-  int GetClosestNicToGpu(int gpuIndex, const char* hca_list, const char** dev_name);
+  int GetClosestNicToGpu(int gpuIndex, const char* hca_list,
+                         std::string *dev_name);
+
+  /**
+   * Returns the closest NICs to the given GPU, sorted by proximity.
+   * Used by multi-NIC merge mode.
+   *
+   * @param[in]  gpuIndex       Index of the GPU to query
+   * @param[in]  hca_list       Include/exclude list of device names (Exclude if prefixed by ^)
+   * @param[in]  max_path_type  Maximum NicPathType allowed (NICs farther away are excluded)
+   * @param[out] nic_names      Vector populated with NIC device names
+   * @returns    Number of NICs found, or -1 on invalid input
+   */
+  int GetClosestNicsToGpu(int gpuIndex, const char* hca_list,
+                          NicPathType max_path_type,
+                          std::vector<std::string> &nic_names);
 
   /**
    * Returns information about number of available Devices

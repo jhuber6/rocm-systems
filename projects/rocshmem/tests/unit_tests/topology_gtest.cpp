@@ -174,16 +174,27 @@ TEST_F(TopologyTestFixture, GetClosestCpuNumaToNicValid) {
   }
 }
 
-// Test GetClosestNicToGpu function
+// Test ParseNicMergeLevel function
+TEST_F(TopologyTestFixture, ParseNicMergeLevelKnown) {
+  EXPECT_EQ(ParseNicMergeLevel("PIX"), NIC_PATH_PIX);
+  EXPECT_EQ(ParseNicMergeLevel("PXB"), NIC_PATH_PXB);
+  EXPECT_EQ(ParseNicMergeLevel("PHB"), NIC_PATH_PHB);
+  EXPECT_EQ(ParseNicMergeLevel("SYS"), NIC_PATH_SYS);
+}
+
+TEST_F(TopologyTestFixture, ParseNicMergeLevelUnknown) {
+  EXPECT_EQ(ParseNicMergeLevel("INVALID"), NIC_PATH_SYS);
+  EXPECT_EQ(ParseNicMergeLevel(""), NIC_PATH_SYS);
+}
+
+// Test GetClosestNicToGpu function (single-NIC selection)
 TEST_F(TopologyTestFixture, GetClosestNicToGpuInvalidIndex) {
-  // Test with invalid GPU index (negative)
   int result = GetClosestNicToGpu(-1, nullptr, nullptr);
   EXPECT_EQ(result, -1);
 }
 
 TEST_F(TopologyTestFixture, GetClosestNicToGpuTooLarge) {
   int numGpus = GetNumDevices(EXE_GPU);
-  // Test with GPU index >= number of GPUs
   int result = GetClosestNicToGpu(numGpus + 10, nullptr, nullptr);
   EXPECT_EQ(result, -1);
 }
@@ -193,32 +204,11 @@ TEST_F(TopologyTestFixture, GetClosestNicToGpuValid) {
   int numNics = GetNumDevices(EXE_NIC);
 
   if (numGpus > 0 && numNics > 0) {
-    const char* devName = nullptr;
-    int result = GetClosestNicToGpu(0, nullptr, &devName);
-    // Should return a valid NIC index or -1 if detection failed
+    std::string name;
+    int result = GetClosestNicToGpu(0, nullptr, &name);
     if (result >= 0) {
       EXPECT_LT(result, numNics);
-      // Device name should be set
-      EXPECT_NE(devName, nullptr);
-      if (devName != nullptr) {
-        free(const_cast<char*>(devName));
-      }
-    }
-  }
-}
-
-TEST_F(TopologyTestFixture, GetClosestNicToGpuWithHcaList) {
-  int numGpus = GetNumDevices(EXE_GPU);
-  int numNics = GetNumDevices(EXE_NIC);
-
-  if (numGpus > 0 && numNics > 0) {
-    // Test with an exclude list (^mlx5_0 excludes mlx5_0)
-    const char* excludeList = "^mlx5_0";
-    int result = GetClosestNicToGpu(0, excludeList, nullptr);
-    // Should return valid index or -1
-    EXPECT_GE(result, -1);
-    if (result >= 0) {
-      EXPECT_LT(result, numNics);
+      EXPECT_FALSE(name.empty());
     }
   }
 }
@@ -228,10 +218,93 @@ TEST_F(TopologyTestFixture, GetClosestNicToGpuConsistency) {
   int numNics = GetNumDevices(EXE_NIC);
 
   if (numGpus > 0 && numNics > 0) {
-    // Call multiple times to verify consistency (static caching)
-    int result1 = GetClosestNicToGpu(0, nullptr, nullptr);
-    int result2 = GetClosestNicToGpu(0, nullptr, nullptr);
-    EXPECT_EQ(result1, result2);
+    int r1 = GetClosestNicToGpu(0, nullptr, nullptr);
+    int r2 = GetClosestNicToGpu(0, nullptr, nullptr);
+    EXPECT_EQ(r1, r2);
+  }
+}
+
+// Test GetClosestNicsToGpu function (multi-NIC selection)
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuInvalidIndex) {
+  std::vector<std::string> names;
+  int result = GetClosestNicsToGpu(-1, nullptr, NIC_PATH_PIX, names);
+  EXPECT_EQ(result, -1);
+  EXPECT_TRUE(names.empty());
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuTooLarge) {
+  int numGpus = GetNumDevices(EXE_GPU);
+  std::vector<std::string> names;
+  int result = GetClosestNicsToGpu(numGpus + 10, nullptr, NIC_PATH_PIX, names);
+  EXPECT_EQ(result, -1);
+  EXPECT_TRUE(names.empty());
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuValid) {
+  int numGpus = GetNumDevices(EXE_GPU);
+  int numNics = GetNumDevices(EXE_NIC);
+
+  if (numGpus > 0 && numNics > 0) {
+    std::vector<std::string> names;
+    int result = GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, names);
+    EXPECT_GT(result, 0);
+    EXPECT_EQ(result, static_cast<int>(names.size()));
+    EXPECT_FALSE(names[0].empty());
+  }
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuWithExcludeList) {
+  int numGpus = GetNumDevices(EXE_GPU);
+  int numNics = GetNumDevices(EXE_NIC);
+
+  if (numGpus > 0 && numNics > 0) {
+    const char* excludeList = "^mlx5_0";
+    std::vector<std::string> names;
+    int result = GetClosestNicsToGpu(0, excludeList, NIC_PATH_SYS, names);
+    EXPECT_GE(result, 0);
+    for (auto const& n : names) {
+      EXPECT_NE(n, "mlx5_0");
+    }
+  }
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuConsistency) {
+  int numGpus = GetNumDevices(EXE_GPU);
+  int numNics = GetNumDevices(EXE_NIC);
+
+  if (numGpus > 0 && numNics > 0) {
+    std::vector<std::string> names1, names2;
+    GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, names1);
+    GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, names2);
+    EXPECT_EQ(names1, names2);
+  }
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuClosestFirst) {
+  int numGpus = GetNumDevices(EXE_GPU);
+  int numNics = GetNumDevices(EXE_NIC);
+
+  if (numGpus > 0 && numNics > 1) {
+    std::vector<std::string> names_all, names_pix;
+    int count_all = GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, names_all);
+    int count_pix = GetClosestNicsToGpu(0, nullptr, NIC_PATH_PIX, names_pix);
+    if (count_all > 0 && count_pix > 0) {
+      EXPECT_EQ(names_all[0], names_pix[0])
+          << "Closest NIC should be the same regardless of max_path_type";
+    }
+  }
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuMergeLevelFilters) {
+  int numGpus = GetNumDevices(EXE_GPU);
+  int numNics = GetNumDevices(EXE_NIC);
+
+  if (numGpus > 0 && numNics > 0) {
+    std::vector<std::string> names_sys, names_pix;
+    int count_sys = GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, names_sys);
+    int count_pix = GetClosestNicsToGpu(0, nullptr, NIC_PATH_PIX, names_pix);
+    EXPECT_GE(count_sys, count_pix)
+        << "SYS level should return >= NICs than PIX level";
   }
 }
 
@@ -570,4 +643,29 @@ TEST_F(PCIeTreeTestFixture, LcaDepthVerification) {
   ASSERT_NE(lca, nullptr);
   depth = GetLcaDepth(lca->address, &root_);
   EXPECT_EQ(depth, 0);  // Root level
+}
+
+TEST_F(PCIeTreeTestFixture, PathTypeFromLcaDepth) {
+  int gpuDepth = GetLcaDepth(gpu_addresses_[0], &root_);
+  ASSERT_EQ(gpuDepth, 3);
+
+  // Same switch (PIX): LCA depth 2, hops = 3 - 2 = 1
+  PCIeNode const* lca = GetLcaBetweenNodes(
+    &root_, gpu_addresses_[0], nic_addresses_[0]);
+  ASSERT_NE(lca, nullptr);
+  int hops = gpuDepth - GetLcaDepth(lca->address, &root_);
+  EXPECT_EQ(hops, 1);
+
+  // Different switch, same socket (PXB): LCA depth 1, hops = 3 - 1 = 2
+  lca = GetLcaBetweenNodes(
+    &root_, gpu_addresses_[0], nic_addresses_[1]);
+  ASSERT_NE(lca, nullptr);
+  hops = gpuDepth - GetLcaDepth(lca->address, &root_);
+  EXPECT_EQ(hops, 2);
+
+  // Different sockets: LCA depth 0 (root), falls through to NUMA check
+  lca = GetLcaBetweenNodes(
+    &root_, gpu_addresses_[0], nic_addresses_[2]);
+  ASSERT_NE(lca, nullptr);
+  EXPECT_EQ(GetLcaDepth(lca->address, &root_), 0);
 }

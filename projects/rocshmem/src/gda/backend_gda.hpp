@@ -59,6 +59,22 @@ inline constexpr uint32_t GDA_IONIC_VENDOR_ID = 0x1DD8;
 inline constexpr uint32_t GDA_MLX5_VENDOR_ID  = 0x02c9; //PCI-ID is 15b3
 inline constexpr uint32_t GDA_BNXT_VENDOR_ID  = 0x14E4;
 
+struct NicDevice {
+  std::string nic_name;
+  struct ibv_device *device = nullptr;
+  struct ibv_context *context = nullptr;
+  struct ibv_device_attr device_attr {};
+  struct ibv_pd *pd_orig = nullptr;
+  struct ibv_pd *pd_parent = nullptr;
+  struct ibv_port_attr portinfo {};
+  union ibv_gid gid {};
+  int port = 1;
+  int gid_index = 0;
+  uint32_t gid_type = 0;
+  struct ibv_mr *heap_mr = nullptr;
+  struct ibv_pd *pd_uxdma[2] = {nullptr, nullptr};
+};
+
 class GDABackend : public Backend {
  private:
   typedef struct dest_info {
@@ -68,21 +84,12 @@ class GDABackend : public Backend {
     union ibv_gid gid;
   } dest_info_t;
 
-  const char *requested_nic = nullptr;
-  struct ibv_device *device = nullptr;
-  struct ibv_context *context = nullptr;;
-  struct ibv_device_attr device_attr;
-  struct ibv_pd *pd_orig = nullptr;
   enum GDAProvider gda_provider = GDAProvider::UNSET;
 
-  struct ibv_port_attr portinfo;
-  union ibv_gid gid;
-  int port = 1;
-  int gid_index = 0;
-  uint32_t gid_type;
-
   uint32_t *heap_rkey = nullptr;
-  struct ibv_mr *heap_mr = nullptr;
+
+  /* NIC Fusion: multiple NIC devices, always at least 1 entry */
+  std::vector<NicDevice> nic_devices_;
 
   std::string debug_str;
 
@@ -100,12 +107,7 @@ class GDABackend : public Backend {
   HIPAllocator *qp_allocator_{nullptr};
   /* GDA_BNXT END */
 
-  /* GDA_IONIC & GDA_MLX5 START */
-  struct ibv_pd *pd_parent = nullptr;
-  /* GDA_IONIC & GDA_MLX5 END */
-
   /* GDA_IONIC START */
-  struct ibv_pd *pd_uxdma[2];
   void *gpu_db_page = nullptr;
   uint64_t *gpu_db_cq = nullptr;
   uint64_t *gpu_db_sq = nullptr;
@@ -115,10 +117,21 @@ class GDABackend : public Backend {
   std::vector<mlx5_devx_qp> mlx5_qps;
   /* GDA_MLX5 END */
 
- /**
-   * @brief Choose nic device according to locality/user preferences
+  /**
+   * @brief Select one or more NICs based on topology/env vars.
+   *        Populates nic_devices_ (always at least 1 entry).
    */
-  void select_nic();
+  void select_nics();
+
+  int num_nics() const { return static_cast<int>(nic_devices_.size()); }
+
+  /**
+   * @brief Returns the NIC index for a given QP row (or context index).
+   *        Always safe: with 1 NIC returns 0; with N NICs round-robins.
+   */
+  int nic_for_qp_row(int qp_row) const {
+    return qp_row % num_nics();
+  }
 
   /**
    * @brief return user-preferred GDA provider (or NONE if not specified)
@@ -376,7 +389,7 @@ class GDABackend : public Backend {
   /**
    * @brief Selects the best GID index
    */
-  void select_gid_index();
+  void select_gid_index(NicDevice &nic);
 
   /**
    * @brief Create all CQs and QPs
@@ -432,8 +445,8 @@ class GDABackend : public Backend {
 
   static void pd_release(ibv_pd* pd, void* pd_context, void* ptr, uint64_t resource_type);
 
-  void create_parent_domain();
-  void ionic_setup_parent_domain(struct ibv_parent_domain_init_attr* pattr);
+  void create_parent_domain(NicDevice &nic);
+  void ionic_setup_parent_domain(NicDevice &nic, struct ibv_parent_domain_init_attr* pattr);
 
   void setup_gpu_qps();
   void cleanup_gpu_qps();

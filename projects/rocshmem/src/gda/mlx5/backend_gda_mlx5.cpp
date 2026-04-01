@@ -68,13 +68,14 @@ void GDABackend::mlx5_create_qps(int sq_length) {
   attr.sq_sig_all          = 0;
   attr.qp_type             = IBV_QPT_RC;
   attr.comp_mask           = IBV_QP_INIT_ATTR_PD;
-  attr.pd                  = pd_orig;
-
   for (size_t i = 0; i < mlx5_qps.size(); i++) {
+    int nic_idx = nic_for_qp_row(i / num_pes);
+    auto &nic = nic_devices_[nic_idx];
+    attr.pd      = nic.pd_orig;
     attr.send_cq = cqs[i];
     attr.recv_cq = cqs[i];
 
-    int err = mlx5_qps[i].create(mlx5dv, context, &attr);
+    int err = mlx5_qps[i].create(mlx5dv, nic.context, &attr);
     CHECK_ZERO(err, "mlx5_devx_qp::create");
   }
 }
@@ -138,8 +139,11 @@ void GDABackend::mlx5_initialize_gpu_qp(QueuePair* gpu_qp, int conn_num) {
                                        reinterpret_cast<gda_mlx5_doorbell*>(gpu_db_ptr),
                                        static_cast<uint16_t>(qp.sq_depth)};
 
-  gpu_qp->rkey = htobe32(heap_rkey[conn_num % num_pes]);
-  gpu_qp->lkey = htobe32(heap_mr->lkey);
+  int nic_idx = nic_for_qp_row(conn_num / num_pes);
+  auto &nic = nic_devices_[nic_idx];
+  int pe = conn_num % num_pes;
+  gpu_qp->rkey = htobe32(heap_rkey[pe * num_nics() + nic_idx]);
+  gpu_qp->lkey = htobe32(nic.heap_mr->lkey);
   gpu_qp->qp_num = qp.qpn;
   gpu_qp->inline_threshold = inline_threshold;
 }

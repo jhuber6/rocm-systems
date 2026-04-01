@@ -518,6 +518,9 @@ namespace envvar {
     extern const var<bool> enable_dmabuf;
     extern const var<bool> override_nic_firmware_check;
     extern const var<std::string> alltoallv_wg_algo;
+    extern const var<bool> merge_nics;
+    extern const var<std::string> net_merge_level;
+    extern const var<std::string> net_force_merge;
   }  // namespace gda
 }  // namespace envvar
 }  // namespace rocshmem

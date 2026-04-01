@@ -73,6 +73,9 @@ namespace envvar {
     const var<bool> enable_dmabuf("ENABLE_DMABUF", "", false);
     const var<bool> override_nic_firmware_check("OVERRIDE_NIC_FIRMWARE_CHECK", "", false);
     const var<std::string> alltoallv_wg_algo("ALLTOALLV_WG_ALGO", "");
+    const var<bool> merge_nics("MERGE_NICS", "", false);
+    const var<std::string> net_merge_level("NET_MERGE_LEVEL", "", "PIX");
+    const var<std::string> net_force_merge("NET_FORCE_MERGE", "", "");
   }  // namespace gda
 
   namespace _detail {
