@@ -2695,6 +2695,250 @@ class AMDSMICommands:
 
         self.logger.print_output()
 
+    def _apu_metric_has_data(self, value):
+        if value == "N/A":
+            return False
+        if isinstance(value, list):
+            return any(self._apu_metric_has_data(v) for v in value)
+        if isinstance(value, dict):
+            return any(self._apu_metric_has_data(v) for v in value.values())
+        return True
+
+    def _format_apu_metric_value(self, value, unit="", divisor=1, precision=0):
+        if isinstance(value, list):
+            formatted_list = [
+                self._format_apu_metric_value(v, unit=unit, divisor=divisor, precision=precision)
+                for v in value
+            ]
+            if self.logger.is_human_readable_format():
+                return "[" + ", ".join(str(v) for v in formatted_list) + "]"
+            return formatted_list
+
+        if value == "N/A":
+            return "N/A"
+
+        if divisor != 1:
+            value = round(value / divisor, precision)
+
+        return self.helpers.unit_format(self.logger, value, unit)
+
+    def _apu_set_metric(self, target_dict, key, value, unit="", divisor=1, precision=0):
+        if self._apu_metric_has_data(value):
+            target_dict[key] = self._format_apu_metric_value(
+                value, unit=unit, divisor=divisor, precision=precision
+            )
+
+    def _add_apu_metrics_to_values(self, values_dict, args, apu_metrics):
+        if not isinstance(apu_metrics, dict):
+            return
+
+        if getattr(args, "usage", False):
+            usage_dict = values_dict.setdefault("usage", {})
+            if usage_dict == "N/A":
+                usage_dict = {}
+                values_dict["usage"] = usage_dict
+            if usage_dict.get("mm_activity", "N/A") == "N/A":
+                self._apu_set_metric(
+                    usage_dict, "mm_activity", apu_metrics.get("average_mm_activity"), unit="%"
+                )
+            self._apu_set_metric(
+                usage_dict,
+                "apu_vcn_activity",
+                apu_metrics.get("average_vcn_activity"),
+                unit="%",
+            )
+            self._apu_set_metric(
+                usage_dict,
+                "apu_ipu_activity",
+                apu_metrics.get("average_ipu_activity"),
+                unit="%",
+            )
+            self._apu_set_metric(
+                usage_dict,
+                "apu_core_c0_activity",
+                apu_metrics.get("average_core_c0_activity"),
+                unit="%",
+            )
+            self._apu_set_metric(
+                usage_dict, "dram_reads", apu_metrics.get("average_dram_reads"), unit="MB/s"
+            )
+            self._apu_set_metric(
+                usage_dict, "dram_writes", apu_metrics.get("average_dram_writes"), unit="MB/s"
+            )
+            self._apu_set_metric(
+                usage_dict, "ipu_reads", apu_metrics.get("average_ipu_reads"), unit="MB/s"
+            )
+            self._apu_set_metric(
+                usage_dict, "ipu_writes", apu_metrics.get("average_ipu_writes"), unit="MB/s"
+            )
+
+        if getattr(args, "power", False):
+            power_dict = values_dict.setdefault("power", {})
+            if power_dict == "N/A":
+                power_dict = {}
+                values_dict["power"] = power_dict
+            if power_dict.get("socket_power", "N/A") == "N/A":
+                self._apu_set_metric(
+                    power_dict,
+                    "socket_power",
+                    apu_metrics.get("average_socket_power"),
+                    unit="W",
+                    divisor=1000,
+                    precision=3,
+                )
+            self._apu_set_metric(
+                power_dict, "cpu_power", apu_metrics.get("average_cpu_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict, "soc_power", apu_metrics.get("average_soc_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict, "gfx_power", apu_metrics.get("average_gfx_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict, "ipu_power", apu_metrics.get("average_ipu_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict, "apu_power", apu_metrics.get("average_apu_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict, "dgpu_power", apu_metrics.get("average_dgpu_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict,
+                "all_core_power",
+                apu_metrics.get("average_all_core_power"),
+                unit="W",
+                divisor=1000,
+                precision=3,
+            )
+            self._apu_set_metric(
+                power_dict, "core_power", apu_metrics.get("average_core_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict, "sys_power", apu_metrics.get("average_sys_power"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict, "stapm_limit", apu_metrics.get("stapm_power_limit"), unit="W", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                power_dict,
+                "current_stapm_limit",
+                apu_metrics.get("current_stapm_power_limit"),
+                unit="W",
+                divisor=1000,
+                precision=3,
+            )
+
+        if getattr(args, "clock", False):
+            clock_dict = values_dict.setdefault("clock", {})
+            if clock_dict == "N/A":
+                clock_dict = {}
+                values_dict["clock"] = clock_dict
+            apu_avg_clocks = {}
+            self._apu_set_metric(apu_avg_clocks, "gfxclk", apu_metrics.get("average_gfxclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "socclk", apu_metrics.get("average_socclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "uclk", apu_metrics.get("average_uclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "fclk", apu_metrics.get("average_fclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "vclk", apu_metrics.get("average_vclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "dclk", apu_metrics.get("average_dclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "vpeclk", apu_metrics.get("average_vpeclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "ipuclk", apu_metrics.get("average_ipuclk_frequency"), unit="MHz")
+            self._apu_set_metric(apu_avg_clocks, "mpipuclk", apu_metrics.get("average_mpipu_frequency"), unit="MHz")
+            if apu_avg_clocks:
+                clock_dict["apu_average"] = apu_avg_clocks
+
+            apu_current_clocks = {}
+            self._apu_set_metric(apu_current_clocks, "gfxclk", apu_metrics.get("current_gfxclk"), unit="MHz")
+            self._apu_set_metric(apu_current_clocks, "socclk", apu_metrics.get("current_socclk"), unit="MHz")
+            self._apu_set_metric(apu_current_clocks, "uclk", apu_metrics.get("current_uclk"), unit="MHz")
+            self._apu_set_metric(apu_current_clocks, "fclk", apu_metrics.get("current_fclk"), unit="MHz")
+            self._apu_set_metric(apu_current_clocks, "vclk", apu_metrics.get("current_vclk"), unit="MHz")
+            self._apu_set_metric(apu_current_clocks, "dclk", apu_metrics.get("current_dclk"), unit="MHz")
+            self._apu_set_metric(apu_current_clocks, "coreclk", apu_metrics.get("current_coreclk"), unit="MHz")
+            self._apu_set_metric(apu_current_clocks, "l3clk", apu_metrics.get("current_l3clk"), unit="MHz")
+            self._apu_set_metric(
+                apu_current_clocks, "core_maxfreq", apu_metrics.get("current_core_maxfreq"), unit="MHz"
+            )
+            self._apu_set_metric(
+                apu_current_clocks, "gfx_maxfreq", apu_metrics.get("current_gfx_maxfreq"), unit="MHz"
+            )
+            if apu_current_clocks:
+                clock_dict["apu_current"] = apu_current_clocks
+
+        if getattr(args, "temperature", False):
+            temperature_dict = values_dict.setdefault("temperature", {})
+            if temperature_dict == "N/A":
+                temperature_dict = {}
+                values_dict["temperature"] = temperature_dict
+            self._apu_set_metric(
+                temperature_dict, "gfx", apu_metrics.get("temperature_gfx"), unit="°C", divisor=100, precision=2
+            )
+            self._apu_set_metric(
+                temperature_dict, "soc", apu_metrics.get("temperature_soc"), unit="°C", divisor=100, precision=2
+            )
+            self._apu_set_metric(
+                temperature_dict, "core", apu_metrics.get("temperature_core"), unit="°C", divisor=100, precision=2
+            )
+            self._apu_set_metric(
+                temperature_dict, "l3", apu_metrics.get("temperature_l3"), unit="°C", divisor=100, precision=2
+            )
+            self._apu_set_metric(
+                temperature_dict, "skin", apu_metrics.get("temperature_skin"), unit="°C", divisor=100, precision=2
+            )
+
+        if getattr(args, "voltage", False):
+            voltage_dict = values_dict.setdefault("voltage", {})
+            if voltage_dict == "N/A":
+                voltage_dict = {}
+                values_dict["voltage"] = voltage_dict
+            self._apu_set_metric(voltage_dict, "cpu", apu_metrics.get("average_cpu_voltage"), unit="mV")
+            self._apu_set_metric(voltage_dict, "soc", apu_metrics.get("average_soc_voltage"), unit="mV")
+            self._apu_set_metric(voltage_dict, "gfx", apu_metrics.get("average_gfx_voltage"), unit="mV")
+            self._apu_set_metric(
+                voltage_dict, "cpu_current", apu_metrics.get("average_cpu_current"), unit="A", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                voltage_dict, "soc_current", apu_metrics.get("average_soc_current"), unit="A", divisor=1000, precision=3
+            )
+            self._apu_set_metric(
+                voltage_dict, "gfx_current", apu_metrics.get("average_gfx_current"), unit="A", divisor=1000, precision=3
+            )
+
+        if getattr(args, "fan", False):
+            fan_dict = values_dict.setdefault("fan", {})
+            if fan_dict == "N/A":
+                fan_dict = {}
+                values_dict["fan"] = fan_dict
+            self._apu_set_metric(fan_dict, "pwm", apu_metrics.get("fan_pwm"))
+
+        if getattr(args, "throttle", False):
+            throttle_dict = values_dict.setdefault("throttle", {})
+            if throttle_dict == "N/A":
+                throttle_dict = {}
+                values_dict["throttle"] = throttle_dict
+            self._apu_set_metric(
+                throttle_dict, "apu_throttle_prochot", apu_metrics.get("throttle_residency_prochot")
+            )
+            self._apu_set_metric(
+                throttle_dict, "apu_throttle_spl", apu_metrics.get("throttle_residency_spl")
+            )
+            self._apu_set_metric(
+                throttle_dict, "apu_throttle_fppt", apu_metrics.get("throttle_residency_fppt")
+            )
+            self._apu_set_metric(
+                throttle_dict, "apu_throttle_sppt", apu_metrics.get("throttle_residency_sppt")
+            )
+            self._apu_set_metric(
+                throttle_dict, "apu_throttle_thm_core", apu_metrics.get("throttle_residency_thm_core")
+            )
+            self._apu_set_metric(
+                throttle_dict, "apu_throttle_thm_gfx", apu_metrics.get("throttle_residency_thm_gfx")
+            )
+            self._apu_set_metric(
+                throttle_dict, "apu_throttle_thm_soc", apu_metrics.get("throttle_residency_thm_soc")
+            )
+
     def metric_gpu(
         self,
         args,
@@ -4259,6 +4503,8 @@ class AMDSMICommands:
                                 self.logger, value, activity_unit
                             )
                 values_dict["throttle"] = throttle_status
+
+        self._add_apu_metrics_to_values(values_dict, args, gpu_metric.get("apu_metrics", "N/A"))
 
         # Store timestamp first if watching_output is enabled
         if watching_output:

@@ -2117,6 +2117,80 @@ struct_amdsmi_gpu_xcp_metrics_t._fields_ = [
 ]
 
 amdsmi_gpu_xcp_metrics_t = struct_amdsmi_gpu_xcp_metrics_t
+class struct_amdsmi_apu_metrics_t(Structure):
+    pass
+
+struct_amdsmi_apu_metrics_t._pack_ = 1 # source:False
+struct_amdsmi_apu_metrics_t._fields_ = [
+    ('temperature_gfx', ctypes.c_uint16),
+    ('temperature_soc', ctypes.c_uint16),
+    ('temperature_core', ctypes.c_uint16 * 16),
+    ('temperature_l3', ctypes.c_uint16 * 2),
+    ('temperature_skin', ctypes.c_uint16),
+    ('average_gfx_activity', ctypes.c_uint16),
+    ('average_mm_activity', ctypes.c_uint16),
+    ('average_vcn_activity', ctypes.c_uint16),
+    ('average_ipu_activity', ctypes.c_uint16 * 8),
+    ('average_core_c0_activity', ctypes.c_uint16 * 16),
+    ('average_dram_reads', ctypes.c_uint16),
+    ('average_dram_writes', ctypes.c_uint16),
+    ('average_ipu_reads', ctypes.c_uint16),
+    ('average_ipu_writes', ctypes.c_uint16),
+    ('average_socket_power', ctypes.c_uint32),
+    ('average_cpu_power', ctypes.c_uint16),
+    ('average_soc_power', ctypes.c_uint16),
+    ('average_gfx_power', ctypes.c_uint32),
+    ('average_core_power', ctypes.c_uint16 * 16),
+    ('average_ipu_power', ctypes.c_uint16),
+    ('average_apu_power', ctypes.c_uint32),
+    ('average_dgpu_power', ctypes.c_uint32),
+    ('average_all_core_power', ctypes.c_uint32),
+    ('average_sys_power', ctypes.c_uint16),
+    ('stapm_power_limit', ctypes.c_uint16),
+    ('current_stapm_power_limit', ctypes.c_uint16),
+    ('average_gfxclk_frequency', ctypes.c_uint16),
+    ('average_socclk_frequency', ctypes.c_uint16),
+    ('average_uclk_frequency', ctypes.c_uint16),
+    ('average_fclk_frequency', ctypes.c_uint16),
+    ('average_vclk_frequency', ctypes.c_uint16),
+    ('average_dclk_frequency', ctypes.c_uint16),
+    ('average_vpeclk_frequency', ctypes.c_uint16),
+    ('average_ipuclk_frequency', ctypes.c_uint16),
+    ('average_mpipu_frequency', ctypes.c_uint16),
+    ('current_gfxclk', ctypes.c_uint16),
+    ('current_socclk', ctypes.c_uint16),
+    ('current_uclk', ctypes.c_uint16),
+    ('current_fclk', ctypes.c_uint16),
+    ('current_vclk', ctypes.c_uint16),
+    ('current_dclk', ctypes.c_uint16),
+    ('current_coreclk', ctypes.c_uint16 * 16),
+    ('current_l3clk', ctypes.c_uint16 * 2),
+    ('current_core_maxfreq', ctypes.c_uint16),
+    ('current_gfx_maxfreq', ctypes.c_uint16),
+    ('throttle_status', ctypes.c_uint32),
+    ('indep_throttle_status', ctypes.c_uint64),
+    ('throttle_residency_prochot', ctypes.c_uint32),
+    ('throttle_residency_spl', ctypes.c_uint32),
+    ('throttle_residency_fppt', ctypes.c_uint32),
+    ('throttle_residency_sppt', ctypes.c_uint32),
+    ('throttle_residency_thm_core', ctypes.c_uint32),
+    ('throttle_residency_thm_gfx', ctypes.c_uint32),
+    ('throttle_residency_thm_soc', ctypes.c_uint32),
+    ('fan_pwm', ctypes.c_uint16),
+    ('average_temperature_gfx', ctypes.c_uint16),
+    ('average_temperature_soc', ctypes.c_uint16),
+    ('average_temperature_core', ctypes.c_uint16 * 16),
+    ('average_temperature_l3', ctypes.c_uint16 * 2),
+    ('average_cpu_voltage', ctypes.c_uint16),
+    ('average_soc_voltage', ctypes.c_uint16),
+    ('average_gfx_voltage', ctypes.c_uint16),
+    ('average_cpu_current', ctypes.c_uint16),
+    ('average_soc_current', ctypes.c_uint16),
+    ('average_gfx_current', ctypes.c_uint16),
+    ('time_filter_alphavalue', ctypes.c_uint32),
+]
+
+amdsmi_apu_metrics_t = struct_amdsmi_apu_metrics_t
 class struct_amdsmi_gpu_metrics_t(Structure):
     pass
 
@@ -2197,6 +2271,7 @@ struct_amdsmi_gpu_metrics_t._fields_ = [
     ('PADDING_5', ctypes.c_ubyte * 4),
     ('vram_max_bandwidth', ctypes.c_uint64),
     ('xgmi_link_status', ctypes.c_uint16 * 8),
+    ('apu_metrics', ctypes.POINTER(struct_amdsmi_apu_metrics_t)),
 ]
 
 amdsmi_gpu_metrics_t = struct_amdsmi_gpu_metrics_t
