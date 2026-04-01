@@ -27,7 +27,6 @@
 #include <hip/hip_runtime.h>
 #include <cstdlib>
 #include <cassert>
-#include <sstream>
 #include <algorithm>
 
 #include "backend_gda.hpp"
@@ -137,34 +136,6 @@ GDABackend::~GDABackend() {
   }
 }
 
-static std::vector<std::string> parseNicList(const std::string &csv) {
-  std::vector<std::string> result;
-  std::stringstream ss(csv);
-  std::string token;
-  while (std::getline(ss, token, ',')) {
-    size_t start = token.find_first_not_of(' ');
-    size_t end   = token.find_last_not_of(' ');
-    if (start != std::string::npos)
-      result.push_back(token.substr(start, end - start + 1));
-  }
-  return result;
-}
-
-static std::string selectRankGroup(const std::string &spec, int rank) {
-  std::vector<std::string> groups;
-  std::stringstream ss(spec);
-  std::string group;
-  while (std::getline(ss, group, ';')) {
-    size_t start = group.find_first_not_of(' ');
-    size_t end   = group.find_last_not_of(' ');
-    if (start != std::string::npos)
-      groups.push_back(group.substr(start, end - start + 1));
-  }
-  if (groups.empty()) return spec;
-  return groups[rank % groups.size()];
-}
-
-
 void GDABackend::select_nics() {
   bool verbose = envvar::debug_level.get_value() >= envvar::types::debug_level::INFO;
 
@@ -181,8 +152,8 @@ void GDABackend::select_nics() {
   const std::string &merge_level_str = envvar::gda::net_merge_level.get_value();
 
   if (use_force_merge) {
-    std::string my_group = selectRankGroup(force_merge, my_pe);
-    nic_names = parseNicList(my_group);
+    std::string my_group = SelectRankGroup(force_merge, my_pe);
+    nic_names = ParseNicList(my_group);
     if (nic_names.empty()) {
       fprintf(stderr, "[rocSHMEM] Error: ROCSHMEM_GDA_NET_FORCE_MERGE is set but "
               "contains no valid NIC names for PE %d: '%s'\n",

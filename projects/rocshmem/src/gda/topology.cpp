@@ -831,6 +831,35 @@ namespace rocshmem
     return NIC_PATH_SYS;
   }
 
+  std::vector<std::string> ParseNicList(const std::string &csv)
+  {
+    std::vector<std::string> result;
+    std::stringstream ss(csv);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+      size_t start = token.find_first_not_of(' ');
+      size_t end   = token.find_last_not_of(' ');
+      if (start != std::string::npos)
+        result.push_back(token.substr(start, end - start + 1));
+    }
+    return result;
+  }
+
+  std::string SelectRankGroup(const std::string &spec, int rank)
+  {
+    std::vector<std::string> groups;
+    std::stringstream ss(spec);
+    std::string group;
+    while (std::getline(ss, group, ';')) {
+      size_t start = group.find_first_not_of(' ');
+      size_t end   = group.find_last_not_of(' ');
+      if (start != std::string::npos)
+        groups.push_back(group.substr(start, end - start + 1));
+    }
+    if (groups.empty()) return spec;
+    return groups[static_cast<size_t>(rank) % groups.size()];
+  }
+
   NicPathType ComputeGpuNicPathType(int gpuIndex, const std::string &nicBusId, int nicNuma)
   {
     char hipPciBusId[64];
@@ -872,7 +901,7 @@ namespace rocshmem
     return false;
   }
 
-  static std::vector<std::string> BuildFilteredNicAddresses(const char* hca_list) {
+  std::vector<std::string> BuildFilteredNicAddresses(const char* hca_list) {
     auto const& ibvDeviceList = GetIbvDeviceList();
     std::string excludeList((nullptr != hca_list && hca_list[0] == '^') ? &hca_list[1] : "");
     std::string includeList((nullptr != hca_list && hca_list[0] != '^') ? hca_list : "");
@@ -1013,6 +1042,10 @@ namespace rocshmem
                 if (a.pathType != b.pathType) return a.pathType < b.pathType;
                 return a.distance < b.distance;
               });
+
+    if (candidates.empty()) {
+      return -1;
+    }
 
     for (auto const& c : candidates) {
       nic_names.push_back(ibvDeviceList[c.idx].name);

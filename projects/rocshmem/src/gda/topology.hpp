@@ -78,6 +78,24 @@ namespace rocshmem
   NicPathType ParseNicMergeLevel(const std::string &level_str);
 
   /**
+   * Parses a comma-separated list of IB device names (e.g. ROCSHMEM_GDA_NET_FORCE_MERGE).
+   * Trims ASCII spaces around each token; empty tokens are omitted.
+   */
+  std::vector<std::string> ParseNicList(const std::string &csv);
+
+  /**
+   * Splits @a spec on ';' into rank groups (trimmed). If there is no ';', returns @a spec.
+   * Otherwise returns groups[rank % groups.size()].
+   */
+  std::string SelectRankGroup(const std::string &spec, int rank);
+
+  /**
+   * PCIe bus ID per IB device (same order as the NIC device list). Empty if the port is down
+   * or excluded by @a hca_list (ROCSHMEM_HCA_LIST / include or ^exclude).
+   */
+  std::vector<std::string> BuildFilteredNicAddresses(const char* hca_list);
+
+  /**
    * Computes the PCIe path type between a GPU and a NIC.
    *
    * @param[in] gpuIndex Index of the GPU

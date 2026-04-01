@@ -23,9 +23,52 @@
  *****************************************************************************/
 
 #include <cstdlib>
+#include "../src/gda/ibv_wrapper.hpp"
 #include "topology_gtest.hpp"
 
 using namespace rocshmem;
+
+namespace {
+
+// Same device order as BuildFilteredNicAddresses / GetNumDevices(EXE_NIC) (ibv_get_device_list).
+std::string IbvDeviceNameAtIndex(int nicIndex) {
+  int num = 0;
+  struct ibv_device** list = ibv.get_device_list(&num);
+  if (!list || nicIndex < 0 || nicIndex >= num) {
+    if (list) ibv.free_device_list(list);
+    return {};
+  }
+  const char* n = ibv.get_device_name(list[nicIndex]);
+  std::string out = n ? n : "";
+  ibv.free_device_list(list);
+  return out;
+}
+
+// ibverbs-style device names for NICs with active ports (same source as topology).
+bool CollectActiveNicNamesForGpu0(std::vector<std::string>* out_names) {
+  out_names->clear();
+  if (GetNumDevices(EXE_GPU) == 0 || GetNumDevices(EXE_NIC) == 0) return false;
+  int n = GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, *out_names);
+  return n > 0 && !out_names->empty();
+}
+
+// If the list contains two different strings, sets *a and *b and returns true.
+bool TwoDistinctNicNames(const std::vector<std::string>& names, std::string* a,
+                         std::string* b) {
+  a->clear();
+  b->clear();
+  if (names.empty()) return false;
+  *a = names[0];
+  for (size_t i = 1; i < names.size(); ++i) {
+    if (names[i] != *a) {
+      *b = names[i];
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
 
 // Test DeviceType helper functions
 TEST_F(DeviceTypeTestFixture, IsCpuExeType) {
@@ -97,6 +140,13 @@ TEST_F(DeviceTypeTestFixture, MemDeviceEquality) {
   // Two identical devices should not be less than each other
   EXPECT_FALSE(cpuMem0_a < cpuMem0_b);
   EXPECT_FALSE(cpuMem0_b < cpuMem0_a);
+}
+
+// NicPathType ordering must match GetClosestNicsToGpu filter (pathType > max_path_type)
+TEST_F(DeviceTypeTestFixture, NicPathTypeMergeOrdering) {
+  EXPECT_LT(NIC_PATH_PIX, NIC_PATH_PXB);
+  EXPECT_LT(NIC_PATH_PXB, NIC_PATH_PHB);
+  EXPECT_LT(NIC_PATH_PHB, NIC_PATH_SYS);
 }
 
 // Test GetNumDevices function
@@ -187,6 +237,181 @@ TEST_F(TopologyTestFixture, ParseNicMergeLevelUnknown) {
   EXPECT_EQ(ParseNicMergeLevel(""), NIC_PATH_SYS);
 }
 
+// ParseNicList (ROCSHMEM_GDA_NET_FORCE_MERGE comma list)
+TEST_F(DeviceTypeTestFixture, ParseNicListCommaSeparated) {
+  auto v = ParseNicList("a,b,c");
+  ASSERT_EQ(v.size(), 3u);
+  EXPECT_EQ(v[0], "a");
+  EXPECT_EQ(v[1], "b");
+  EXPECT_EQ(v[2], "c");
+}
+
+TEST_F(DeviceTypeTestFixture, ParseNicListTrimsSpaces) {
+  auto v = ParseNicList(" rocep0 , rocep1 ");
+  ASSERT_EQ(v.size(), 2u);
+  EXPECT_EQ(v[0], "rocep0");
+  EXPECT_EQ(v[1], "rocep1");
+}
+
+TEST_F(DeviceTypeTestFixture, ParseNicListSingleToken) {
+  auto v = ParseNicList("mlx5_0");
+  ASSERT_EQ(v.size(), 1u);
+  EXPECT_EQ(v[0], "mlx5_0");
+}
+
+TEST_F(DeviceTypeTestFixture, ParseNicListEmptyAndSkipsBlankTokens) {
+  EXPECT_TRUE(ParseNicList("").empty());
+  auto v = ParseNicList("x,, y");
+  ASSERT_EQ(v.size(), 2u);
+  EXPECT_EQ(v[0], "x");
+  EXPECT_EQ(v[1], "y");
+}
+
+// SelectRankGroup (semicolon-separated rank groups in NET_FORCE_MERGE)
+TEST_F(DeviceTypeTestFixture, SelectRankGroupNoSemicolonReturnsWholeSpec) {
+  EXPECT_EQ(SelectRankGroup("rocep0,rocep1", 0), "rocep0,rocep1");
+  EXPECT_EQ(SelectRankGroup("rocep0,rocep1", 99), "rocep0,rocep1");
+}
+
+TEST_F(DeviceTypeTestFixture, SelectRankGroupRoundRobin) {
+  std::string spec = "g0a,g0b; g1a,g1b ; g2";
+  EXPECT_EQ(SelectRankGroup(spec, 0), "g0a,g0b");
+  EXPECT_EQ(SelectRankGroup(spec, 1), "g1a,g1b");
+  EXPECT_EQ(SelectRankGroup(spec, 2), "g2");
+  EXPECT_EQ(SelectRankGroup(spec, 3), "g0a,g0b");
+  EXPECT_EQ(SelectRankGroup(spec, 4), "g1a,g1b");
+  EXPECT_EQ(SelectRankGroup(spec, 5), "g2");
+}
+
+TEST_F(DeviceTypeTestFixture, SelectRankGroupOnlyBlankGroupsFallsBackToSpec) {
+  std::string spec = "  ;  ;  ";
+  EXPECT_EQ(SelectRankGroup(spec, 0), spec);
+}
+
+// BuildFilteredNicAddresses
+TEST_F(TopologyTestFixture, BuildFilteredNicAddressesSizeMatchesDeviceList) {
+  int numNics = GetNumDevices(EXE_NIC);
+  auto addrs = BuildFilteredNicAddresses(nullptr);
+  EXPECT_EQ(addrs.size(), static_cast<size_t>(numNics));
+}
+
+TEST_F(TopologyTestFixture, BuildFilteredNicAddressesIncludeNoMatchAllEmpty) {
+  int numNics = GetNumDevices(EXE_NIC);
+  if (numNics == 0) return;
+  auto addrs = BuildFilteredNicAddresses("rocshmem_no_such_nic_zzz");
+  ASSERT_EQ(addrs.size(), static_cast<size_t>(numNics));
+  for (auto const& a : addrs) {
+    EXPECT_TRUE(a.empty());
+  }
+}
+
+TEST_F(TopologyTestFixture, BuildFilteredNicAddressesNullHcaListNonEmptyForActive) {
+  int numNics = GetNumDevices(EXE_NIC);
+  if (numNics == 0) return;
+  auto addrs = BuildFilteredNicAddresses(nullptr);
+  int non_empty = 0;
+  for (auto const& a : addrs) {
+    if (!a.empty()) non_empty++;
+  }
+  EXPECT_GT(non_empty, 0) << "expect at least one active IB port with bus id";
+}
+
+TEST_F(TopologyTestFixture, BuildFilteredNicAddressesExcludeNoMatchSameAsNull) {
+  int numNics = GetNumDevices(EXE_NIC);
+  if (numNics == 0) return;
+  auto base = BuildFilteredNicAddresses(nullptr);
+  auto ex = BuildFilteredNicAddresses("^rocshmem_exclude_no_such_device_zzz");
+  ASSERT_EQ(base.size(), ex.size());
+  EXPECT_EQ(base, ex);
+}
+
+TEST_F(TopologyTestFixture, BuildFilteredNicAddressesExcludeOneRealName) {
+  int numNics = GetNumDevices(EXE_NIC);
+  if (numNics == 0) return;
+  std::vector<std::string> nic_names;
+  if (!CollectActiveNicNamesForGpu0(&nic_names)) return;
+
+  auto base = BuildFilteredNicAddresses(nullptr);
+  std::string const exclude_list = "^" + nic_names[0];
+  auto ex = BuildFilteredNicAddresses(exclude_list.c_str());
+  ASSERT_EQ(base.size(), ex.size());
+  int nb = 0, ne = 0;
+  int excluded_active = 0;
+  for (size_t i = 0; i < base.size(); i++) {
+    std::string const dev_name = IbvDeviceNameAtIndex(static_cast<int>(i));
+    bool const excluded_by_name = (dev_name == nic_names[0]);
+    if (!base[i].empty() && excluded_by_name) {
+      EXPECT_TRUE(ex[i].empty()) << "excluded NIC " << dev_name << " must lose bus id";
+      excluded_active++;
+    }
+    if (!ex[i].empty()) {
+      EXPECT_EQ(ex[i], base[i]) << "non-excluded slot keeps same PCIe bus id";
+      ne++;
+    }
+    if (!base[i].empty()) nb++;
+  }
+  EXPECT_LE(ne, nb);
+  EXPECT_GT(excluded_active, 0) << "exclude list should match at least one active NIC";
+}
+
+TEST_F(TopologyTestFixture, BuildFilteredNicAddressesExcludeTwoRealNames) {
+  int numNics = GetNumDevices(EXE_NIC);
+  if (numNics == 0) return;
+  std::vector<std::string> nic_names;
+  if (!CollectActiveNicNamesForGpu0(&nic_names)) return;
+  std::string n0, n1;
+  if (!TwoDistinctNicNames(nic_names, &n0, &n1)) GTEST_SKIP() << "need two distinct ibv device names";
+
+  auto base = BuildFilteredNicAddresses(nullptr);
+  std::string const exclude_list = "^" + n0 + "," + n1;
+  auto ex = BuildFilteredNicAddresses(exclude_list.c_str());
+  ASSERT_EQ(base.size(), ex.size());
+  int excluded_active = 0;
+  for (size_t i = 0; i < base.size(); i++) {
+    std::string const dev_name = IbvDeviceNameAtIndex(static_cast<int>(i));
+    bool const excluded_by_name = (dev_name == n0 || dev_name == n1);
+    if (!base[i].empty() && excluded_by_name) {
+      EXPECT_TRUE(ex[i].empty()) << "excluded NIC " << dev_name << " must lose bus id";
+      excluded_active++;
+    }
+    if (!ex[i].empty())
+      EXPECT_EQ(ex[i], base[i]);
+  }
+  EXPECT_GE(excluded_active, 2) << "both excluded names should match active NIC entries";
+}
+
+TEST_F(TopologyTestFixture, BuildFilteredNicAddressesIncludeTwoRealNames) {
+  int numNics = GetNumDevices(EXE_NIC);
+  if (numNics == 0) return;
+  std::vector<std::string> nic_names;
+  if (!CollectActiveNicNamesForGpu0(&nic_names)) return;
+  std::string n0, n1;
+  if (!TwoDistinctNicNames(nic_names, &n0, &n1)) GTEST_SKIP() << "need two distinct ibv device names";
+
+  auto base = BuildFilteredNicAddresses(nullptr);
+  std::string const include_list = n0 + "," + n1;
+  auto inc = BuildFilteredNicAddresses(include_list.c_str());
+  ASSERT_EQ(base.size(), inc.size());
+  int nb = 0, ni = 0;
+  for (size_t i = 0; i < base.size(); i++) {
+    std::string const dev_name = IbvDeviceNameAtIndex(static_cast<int>(i));
+    bool const in_list = (dev_name == n0 || dev_name == n1);
+    if (!base[i].empty()) {
+      if (in_list) {
+        EXPECT_EQ(inc[i], base[i]) << "included NIC " << dev_name << " keeps bus id";
+        ni++;
+      } else {
+        EXPECT_TRUE(inc[i].empty()) << "NIC " << dev_name << " not in include list must be cleared";
+      }
+    } else {
+      EXPECT_TRUE(inc[i].empty());
+    }
+    if (!base[i].empty()) nb++;
+  }
+  EXPECT_LE(ni, nb);
+  EXPECT_GE(ni, 2) << "include list with two real names should keep at least two active entries";
+}
+
 // Test GetClosestNicToGpu function (single-NIC selection)
 TEST_F(TopologyTestFixture, GetClosestNicToGpuInvalidIndex) {
   int result = GetClosestNicToGpu(-1, nullptr, nullptr);
@@ -261,9 +486,14 @@ TEST_F(TopologyTestFixture, GetClosestNicsToGpuWithExcludeList) {
     const char* excludeList = "^mlx5_0";
     std::vector<std::string> names;
     int result = GetClosestNicsToGpu(0, excludeList, NIC_PATH_SYS, names);
-    EXPECT_GE(result, 0);
-    for (auto const& n : names) {
-      EXPECT_NE(n, "mlx5_0");
+    if (result == -1) {
+      EXPECT_TRUE(names.empty());
+    } else {
+      EXPECT_GT(result, 0);
+      EXPECT_EQ(result, static_cast<int>(names.size()));
+      for (auto const& n : names) {
+        EXPECT_NE(n, "mlx5_0");
+      }
     }
   }
 }
@@ -303,8 +533,54 @@ TEST_F(TopologyTestFixture, GetClosestNicsToGpuMergeLevelFilters) {
     std::vector<std::string> names_sys, names_pix;
     int count_sys = GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, names_sys);
     int count_pix = GetClosestNicsToGpu(0, nullptr, NIC_PATH_PIX, names_pix);
-    EXPECT_GE(count_sys, count_pix)
-        << "SYS level should return >= NICs than PIX level";
+    if (count_sys > 0 && count_pix > 0) {
+      EXPECT_GE(count_sys, count_pix)
+          << "SYS level should return >= NICs than PIX level";
+    }
+  }
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuPhbPxbSubsetOfSys) {
+  int numGpus = GetNumDevices(EXE_GPU);
+  int numNics = GetNumDevices(EXE_NIC);
+
+  if (numGpus > 0 && numNics > 0) {
+    std::vector<std::string> sys_nics, phb_nics, pxb_nics;
+    int n_sys = GetClosestNicsToGpu(0, nullptr, NIC_PATH_SYS, sys_nics);
+    int n_phb = GetClosestNicsToGpu(0, nullptr, NIC_PATH_PHB, phb_nics);
+    int n_pxb = GetClosestNicsToGpu(0, nullptr, NIC_PATH_PXB, pxb_nics);
+    if (n_sys > 0 && n_phb > 0) {
+      EXPECT_GE(n_sys, n_phb);
+    }
+    if (n_phb > 0 && n_pxb > 0) {
+      EXPECT_GE(n_phb, n_pxb);
+    }
+  }
+}
+
+TEST_F(TopologyTestFixture, GetClosestNicsToGpuIncludeListNoMatch) {
+  int numGpus = GetNumDevices(EXE_GPU);
+
+  if (numGpus > 0) {
+    std::vector<std::string> names;
+    int result = GetClosestNicsToGpu(
+        0, "rocshmem_nonexistent_nic", NIC_PATH_SYS, names);
+    EXPECT_EQ(result, -1);
+    EXPECT_TRUE(names.empty());
+  }
+}
+
+TEST_F(TopologyTestFixture, ComputeGpuNicPathTypeSyntheticBusId) {
+  int numGpus = GetNumDevices(EXE_GPU);
+
+  if (numGpus > 0) {
+    const std::string fakeNicBus("0000:fe:00.0");
+    NicPathType a = ComputeGpuNicPathType(0, fakeNicBus, -1);
+    NicPathType b = ComputeGpuNicPathType(0, fakeNicBus, -1);
+    EXPECT_EQ(a, b);
+    int v = static_cast<int>(a);
+    EXPECT_GE(v, static_cast<int>(NIC_PATH_PIX));
+    EXPECT_LE(v, static_cast<int>(NIC_PATH_SYS));
   }
 }
 
