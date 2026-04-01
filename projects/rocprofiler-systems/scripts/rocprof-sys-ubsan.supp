@@ -1,40 +1,21 @@
-# UndefinedBehaviorSanitizer ignorelist for rocprofiler-systems
-# See: https://clang.llvm.org/docs/SanitizerSpecialCaseList.html
+# UndefinedBehaviorSanitizer runtime suppression file for rocprofiler-systems
+# See: https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#runtime-suppressions
 #
-# Format: <type>:<pattern>=<category>
-# This file is passed via -fsanitize-blacklist= at compile time
-# or via UBSAN_OPTIONS=suppressions= at runtime (GCC).
+# Format: <check_type>:<pattern>
+# Only the "vptr" check supports runtime suppressions.
+# Source-level exclusions use -fsanitize-blacklist= at compile time instead.
+#
+# Note: this file is passed via UBSAN_OPTIONS=suppressions= at runtime.
+# Lines starting with '#' are comments. Empty files are valid.
 
 # Dyninst - third-party binary instrumentation framework
-[undefined]
-src:*/external/dyninst/*
+vptr:Dyninst::*
 
 # Boost - third-party library
-[undefined]
-src:*/external/boost/*
-src:*/boost/*
+vptr:boost::*
 
 # TBB - Intel Threading Building Blocks
-[undefined]
-src:*/external/tbb/*
-src:*/tbb/*
+vptr:tbb::*
 
 # timemory - performance analysis toolkit
-[undefined]
-src:*/external/timemory/*
-
-# perfetto - tracing framework
-[undefined]
-src:*/external/perfetto/*
-
-# elfio - ELF reader/writer
-[undefined]
-src:*/external/elfio/*
-
-# pybind11 - Python bindings
-[undefined]
-src:*/external/pybind11/*
-
-# PTL - parallel tasking library
-[undefined]
-src:*/external/PTL/*
+vptr:tim::*
