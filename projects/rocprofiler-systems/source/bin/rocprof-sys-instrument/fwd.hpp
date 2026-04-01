@@ -378,6 +378,10 @@ get_name(module_t*);
 symtab_func_t*
 get_symtab_function(procedure_t*);
 
+std::vector<procedure_t*>*
+get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
+               bool include_uninstr);
+
 namespace std
 {
 std::string to_string(instruction_category_t);

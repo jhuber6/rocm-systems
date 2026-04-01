@@ -1469,10 +1469,11 @@ main(int argc, char** argv)
 
     // get image
     verbprintf(1, "Getting the address space image, modules, and procedures...\n");
-    image_t*                   app_image     = addr_space->getImage();
-    std::vector<module_t*>*    app_modules   = app_image->getModules();
-    std::vector<procedure_t*>* app_functions = app_image->getProcedures(include_uninstr);
-    std::unordered_set<module_t*>    modules = {};
+    image_t*                   app_image   = addr_space->getImage();
+    std::vector<module_t*>*    app_modules = app_image->getModules();
+    std::vector<procedure_t*>* app_functions =
+        get_procedures(app_image, app_modules, include_uninstr);
+    std::unordered_set<module_t*>    modules   = {};
     std::unordered_set<procedure_t*> functions = {};
 
     if(app_modules) process_modules(*app_modules);
