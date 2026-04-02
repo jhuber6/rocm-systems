@@ -835,15 +835,145 @@ using ::timemory::join::join;
 
 //======================================================================================//
 //
-//  Replacement for Dyninst's BPatch_image::getProcedures that skips both internal and
-//  user excluded objects/modules (libraries and compilation units)
+//  Filters app_modules by removing internal and user-excluded modules.
+//  Returns a new vector containing only the modules eligible for instrumentation.
+//
+
+std::vector<module_t*>
+filter_modules(std::vector<module_t*>* app_modules)
+{
+    if(!app_modules || app_modules->empty()) return {};
+
+    auto _wc = tim::component::wall_clock{};
+    auto _pr = tim::component::peak_rss{};
+    _wc.start();
+    _pr.start();
+
+    // This does determine objects/procedures associated with a module, but it
+    // internally uses Dyninst's Symtab API (faster)
+    const auto& _internal_libs = get_internal_libs_data();
+
+    auto   _result         = std::vector<module_t*>{};
+    size_t _excluded_count = 0;
+
+    for(auto* mod : *app_modules)
+    {
+        if(!mod) continue;
+
+        auto _module_name = std::string{ get_name(mod) };
+        auto _module_base = std::string{ tim::filepath::basename(_module_name) };
+        auto _module_real = tim::filepath::realpath(_module_name, nullptr, false);
+
+        bool _is_excluded = false;
+
+        if(_internal_libs.find(_module_name) != _internal_libs.end() ||
+           _internal_libs.find(_module_real) != _internal_libs.end() ||
+           _internal_libs.find(_module_base) != _internal_libs.end())
+        {
+            _is_excluded = true;
+        }
+
+        if(!_is_excluded)
+        {
+            for(const auto& [lib_path, sub_map] : _internal_libs)
+            {
+                auto _lib_base = std::string{ tim::filepath::basename(lib_path) };
+                if(_module_base == _lib_base || _module_real == lib_path ||
+                   sub_map.find(_module_base) != sub_map.end() ||
+                   sub_map.find(_module_real) != sub_map.end() ||
+                   sub_map.find(_module_name) != sub_map.end())
+                {
+                    _is_excluded = true;
+                    break;
+                }
+            }
+        }
+
+        if(_is_excluded)
+        {
+            verbprintf(3, "Skipping internal module: '%s'\n", _module_name.c_str());
+            ++_excluded_count;
+            continue;
+        }
+
+        // -ME: skip if module matches an exclude regex
+        for(const auto& re : file_exclude)
+        {
+            if(std::regex_search(_module_name, re))
+            {
+                _is_excluded = true;
+                verbprintf(2, "[filter_modules] skipping module-exclude-regex: '%s'\n",
+                           _module_name.c_str());
+                break;
+            }
+        }
+
+        // -MR: skip if restrict is specified and module does NOT match
+        if(!_is_excluded && !file_restrict.empty())
+        {
+            bool _matched = false;
+            for(const auto& re : file_restrict)
+            {
+                if(std::regex_search(_module_name, re))
+                {
+                    _matched = true;
+                    break;
+                }
+            }
+            if(!_matched)
+            {
+                _is_excluded = true;
+                verbprintf(2, "[filter_modules] skipping module-restrict-regex: '%s'\n",
+                           _module_name.c_str());
+            }
+        }
+
+        // -MI: if module matches an include regex, force it through
+        if(_is_excluded)
+        {
+            for(const auto& re : file_include)
+            {
+                if(std::regex_search(_module_name, re))
+                {
+                    _is_excluded = false;
+                    verbprintf(2, "[filter_modules] forcing module-include-regex: '%s'\n",
+                               _module_name.c_str());
+                    break;
+                }
+            }
+        }
+
+        if(_is_excluded)
+        {
+            ++_excluded_count;
+            continue;
+        }
+
+        _result.emplace_back(mod);
+    }
+
+    _pr.stop();
+    _wc.stop();
+    verbprintf(0,
+               "Filtered modules: %zu of %zu included (%zu excluded) "
+               "(%.3f %s, %.3f %s)\n",
+               _result.size(), app_modules->size(), _excluded_count, _wc.get(),
+               _wc.display_unit().c_str(), _pr.get(), _pr.display_unit().c_str());
+
+    return _result;
+}
+
+//======================================================================================//
+//
+//  Fetches procedures from the given modules. Assumes modules have already been
+//  filtered by filter_modules(). Falls back to app_image->getProcedures() if
+//  no modules are provided.
 //
 
 std::vector<procedure_t*>*
 get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
                bool include_uninstrumentable)
 {
-    // Timing and memory usage
     auto _wc = tim::component::wall_clock{};
     auto _pr = tim::component::peak_rss{};
     _wc.start();
@@ -868,110 +998,11 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
         return _procs;
     }
 
-    // This does determine objects/procedures associated with a module, but it
-    // internally uses Dyninst's Symtab API (faster)
-    const auto& _internal_libs = get_internal_libs_data();
-
-    auto*  proclist        = new std::vector<procedure_t*>{};
-    size_t _excluded_count = 0;
-    size_t _included_count = 0;
+    auto* proclist = new std::vector<procedure_t*>{};
 
     for(auto* mod : *app_modules)
     {
         if(!mod) continue;
-
-        auto _module_name = std::string{ get_name(mod) };
-        auto _module_base = std::string{ tim::filepath::basename(_module_name) };
-        auto _module_real = tim::filepath::realpath(_module_name, nullptr, false);
-
-        bool _is_internal = false;
-
-        // Check that module name/basename/realpath directly matches an internal library
-        if(_internal_libs.find(_module_name) != _internal_libs.end() ||
-           _internal_libs.find(_module_real) != _internal_libs.end() ||
-           _internal_libs.find(_module_base) != _internal_libs.end())
-        {
-            _is_internal = true;
-        }
-
-        // Check if module appears as a sub-entry in any internal library
-        if(!_is_internal)
-        {
-            for(const auto& [lib_path, sub_map] : _internal_libs)
-            {
-                auto _lib_base = std::string{ tim::filepath::basename(lib_path) };
-                if(_module_base == _lib_base || _module_real == lib_path ||
-                   sub_map.find(_module_base) != sub_map.end() ||
-                   sub_map.find(_module_real) != sub_map.end() ||
-                   sub_map.find(_module_name) != sub_map.end())
-                {
-                    _is_internal = true;
-                    break;
-                }
-            }
-        }
-
-        if(_is_internal)
-        {
-            verbprintf(3, "Skipping internal module: '%s'\n", _module_name.c_str());
-            ++_excluded_count;
-            continue;
-        }
-
-        // -ME: skip if module matches
-        for(const auto& re : file_exclude)
-        {
-            if(std::regex_search(_module_name, re))
-            {
-                _is_internal = true;
-                verbprintf(2, "[get_procedures] skipping module-exclude-regex: '%s'\n",
-                           _module_name.c_str());
-                break;
-            }
-        }
-
-        // -MR: skip if module does NOT match
-        if(!_is_internal && !file_restrict.empty())
-        {
-            bool _matched = false;
-            for(const auto& re : file_restrict)
-            {
-                if(std::regex_search(_module_name, re))
-                {
-                    _matched = true;
-                    break;
-                }
-            }
-            if(!_matched)
-            {
-                _is_internal = true;
-                verbprintf(2, "[get_procedures] skipping module-restrict-regex: '%s'\n",
-                           _module_name.c_str());
-            }
-        }
-
-        // -MI: add if module matches
-        if(_is_internal)
-        {
-            for(const auto& re : file_include)
-            {
-                if(std::regex_search(_module_name, re))
-                {
-                    _is_internal = false;
-                    verbprintf(2, "[get_procedures] forcing module-include-regex: '%s'\n",
-                               _module_name.c_str());
-                    break;
-                }
-            }
-        }
-
-        if(_is_internal)
-        {
-            ++_excluded_count;
-            continue;
-        }
-
-        ++_included_count;
         auto* procs = mod->getProcedures(include_uninstrumentable);
         if(procs && !procs->empty())
             proclist->insert(proclist->end(), procs->begin(), procs->end());
@@ -980,11 +1011,10 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
     _pr.stop();
     _wc.stop();
     verbprintf(0,
-               "Fetched procedures from %zu of %zu modules (%zu excluded): "
+               "Fetched procedures from %zu modules: "
                "%zu procedures found (%.3f %s, %.3f %s)\n",
-               _included_count, app_modules->size(), _excluded_count, proclist->size(),
-               _wc.get(), _wc.display_unit().c_str(), _pr.get(),
-               _pr.display_unit().c_str());
+               app_modules->size(), proclist->size(), _wc.get(),
+               _wc.display_unit().c_str(), _pr.get(), _pr.display_unit().c_str());
 
     if(proclist->empty())
     {
