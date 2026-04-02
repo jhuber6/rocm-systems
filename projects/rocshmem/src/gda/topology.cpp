@@ -704,6 +704,18 @@ namespace rocshmem
     return nullptr;
   }
 
+  // Returns which direct child of `parent` is an ancestor of `descendant`.
+  static PCIeNode const* GetChildLeadingTo(PCIeNode const* parent,
+                                           std::string const& descendant)
+  {
+    if (!parent) return nullptr;
+    for (auto const& child : parent->children) {
+      if (GetPCIeNode(descendant, &child))
+        return &child;
+    }
+    return nullptr;
+  }
+
   // Public wrapper for GetLcaBetweenNodesRecursive
   PCIeNode const* GetLcaBetweenNodes(PCIeNode    const* root,
                                      std::string const& node1Address,
@@ -871,13 +883,37 @@ namespace rocshmem
 
     PCIeNode const* lca = GetLcaBetweenNodes(root, gpuBusId, nicBusId);
     if (lca) {
-      int lcaDepth = GetLcaDepth(lca->address, root);
-      int gpuDepth = GetLcaDepth(gpuBusId, root);
+      // The LCA is only meaningful for PIX/PXB classification when it is an
+      // actual PCIe node (address contains ':' like "0000:01:00.0" or
+      // "pci0000:00").  On multi-socket systems, devices on different root
+      // complexes still share a sysfs ancestor (e.g. "devices"), which the
+      // tree walk finds — but that is not a real PCIe relationship.
+      bool lcaIsPCIeNode = lca->address.find(':') != std::string::npos;
 
-      if (lcaDepth > 0 && gpuDepth > 0) {
-        int hops = gpuDepth - lcaDepth;
-        if (hops == 1) return NIC_PATH_PIX;
-        if (hops > 1)  return NIC_PATH_PXB;
+      if (lcaIsPCIeNode) {
+        int lcaDepth = GetLcaDepth(lca->address, root);
+        int gpuDepth = GetLcaDepth(gpuBusId, root);
+
+        if (lcaDepth > 0 && gpuDepth > 0) {
+          int hops = gpuDepth - lcaDepth;
+          if (hops == 1) return NIC_PATH_PIX;
+          if (hops > 1) {
+            // Deep switch hierarchies produce hops > 1
+            // even when GPU and NIC are behind the same physical switch.
+            // Detect this: if the LCA's children leading to GPU and NIC share
+            // the same PCIe bus number, they are downstream ports of the same
+            // switch chip, then it is PIX, not PXB.
+            auto const* gpuChild = GetChildLeadingTo(lca, gpuBusId);
+            auto const* nicChild = GetChildLeadingTo(lca, nicBusId);
+            if (gpuChild && nicChild && gpuChild != nicChild) {
+              int gpuChildBus = ExtractBusNumber(gpuChild->address);
+              int nicChildBus = ExtractBusNumber(nicChild->address);
+              if (gpuChildBus >= 0 && gpuChildBus == nicChildBus)
+                return NIC_PATH_PIX;
+            }
+            return NIC_PATH_PXB;
+          }
+        }
       }
     }
 
