@@ -35,8 +35,8 @@
 #include <cstring>
 #include <ctime>
 #include <iomanip>
-#include <map>
 #include <limits>
+#include <map>
 #include <regex>  // NOLINT
 #include <string>
 #include <tuple>
@@ -144,9 +144,10 @@ const AMDGpuMetricVersionTranslationTbl_t amdgpu_metric_version_translation_tabl
     {join_metrics_version(1, 6), AMDGpuMetricVersionFlags_t::kGpuMetricV16},
     {join_metrics_version(1, 7), AMDGpuMetricVersionFlags_t::kGpuMetricV17},
     {join_metrics_version(1, 8), AMDGpuMetricVersionFlags_t::kGpuMetricV18},
-    {join_metrics_version(1, 9), AMDGpuMetricVersionFlags_t::kGpuMetricDynV19Plus},     // Dynamic GPU Metrics v1.9+
-    {join_metrics_version(2, 4), AMDGpuMetricVersionFlags_t::kApuMetricV24},           // APU Metrics v2.4
-    {join_metrics_version(3, 0), AMDGpuMetricVersionFlags_t::kApuMetricV30},           // APU Metrics v3.0
+    {join_metrics_version(1, 9),
+     AMDGpuMetricVersionFlags_t::kGpuMetricDynV19Plus},  // Dynamic GPU Metrics v1.9+
+    {join_metrics_version(2, 4), AMDGpuMetricVersionFlags_t::kApuMetricV24},  // APU Metrics v2.4
+    {join_metrics_version(3, 0), AMDGpuMetricVersionFlags_t::kApuMetricV30},  // APU Metrics v3.0
 };
 
 //  version 1.0: 256
@@ -845,20 +846,20 @@ rsmi_status_t ApuMetricsBase_v30_t::populate_metrics_dynamic_tbl() {
                            AMDGpuMetricsUnitType_t::kMetricAvgDClock0Frequency,
                            metrics.m_average_dclk_frequency, "average_dclk_frequency");
     populate_metrics_table(AMDGpuMetricsClassId_t::kGpuMetricCurrentClock,
-                           AMDGpuMetricsUnitType_t::kMetricCurrGfxClock,
-                           metrics.m_current_gfxclk, "current_gfxclk");
+                           AMDGpuMetricsUnitType_t::kMetricCurrGfxClock, metrics.m_current_gfxclk,
+                           "current_gfxclk");
     populate_metrics_table(AMDGpuMetricsClassId_t::kGpuMetricCurrentClock,
-                           AMDGpuMetricsUnitType_t::kMetricCurrSocClock,
-                           metrics.m_current_socclk, "current_socclk");
+                           AMDGpuMetricsUnitType_t::kMetricCurrSocClock, metrics.m_current_socclk,
+                           "current_socclk");
     populate_metrics_table(AMDGpuMetricsClassId_t::kGpuMetricCurrentClock,
-                           AMDGpuMetricsUnitType_t::kMetricCurrUClock,
-                           metrics.m_current_uclk, "current_uclk");
+                           AMDGpuMetricsUnitType_t::kMetricCurrUClock, metrics.m_current_uclk,
+                           "current_uclk");
     populate_metrics_table(AMDGpuMetricsClassId_t::kGpuMetricCurrentClock,
-                           AMDGpuMetricsUnitType_t::kMetricCurrVClock0,
-                           metrics.m_current_vclk, "current_vclk");
+                           AMDGpuMetricsUnitType_t::kMetricCurrVClock0, metrics.m_current_vclk,
+                           "current_vclk");
     populate_metrics_table(AMDGpuMetricsClassId_t::kGpuMetricCurrentClock,
-                           AMDGpuMetricsUnitType_t::kMetricCurrDClock0,
-                           metrics.m_current_dclk, "current_dclk");
+                           AMDGpuMetricsUnitType_t::kMetricCurrDClock0, metrics.m_current_dclk,
+                           "current_dclk");
     populate_metrics_table(AMDGpuMetricsClassId_t::kGpuMetricThrottleStatus,
                            AMDGpuMetricsUnitType_t::kMetricThrottleStatus,
                            metrics.m_throttle_status, "throttle_status");
@@ -2437,8 +2438,7 @@ AMGpuMetricsPublicLatestTupl_t ApuMetricsBase_v30_t::copy_internal_to_external_m
     apu.average_gfx_activity = metrics.m_average_gfx_activity;
     apu.average_vcn_activity = metrics.m_average_vcn_activity;
     std::copy_n(std::begin(metrics.m_average_ipu_activity), 8, apu.average_ipu_activity);
-    std::copy_n(std::begin(metrics.m_average_core_c0_activity), 16,
-                apu.average_core_c0_activity);
+    std::copy_n(std::begin(metrics.m_average_core_c0_activity), 16, apu.average_core_c0_activity);
     apu.average_dram_reads = metrics.m_average_dram_reads;
     apu.average_dram_writes = metrics.m_average_dram_writes;
     apu.average_ipu_reads = metrics.m_average_ipu_reads;

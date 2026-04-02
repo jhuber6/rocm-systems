@@ -103,8 +103,8 @@ void PrintApuMetrics(const amdsmi_gpu_metrics_t& smu) {
     std::cout << "average_all_core_power = " << std::dec << apu.average_all_core_power << "\n";
     std::cout << "average_sys_power = " << std::dec << apu.average_sys_power << "\n";
     std::cout << "stapm_power_limit = " << std::dec << apu.stapm_power_limit << "\n";
-    std::cout << "current_stapm_power_limit = " << std::dec
-              << apu.current_stapm_power_limit << "\n";
+    std::cout << "current_stapm_power_limit = " << std::dec << apu.current_stapm_power_limit
+              << "\n";
   }
 
   std::cout << "\n";
@@ -118,10 +118,8 @@ void PrintApuMetrics(const amdsmi_gpu_metrics_t& smu) {
     std::cout << "average_dclk_frequency = " << std::dec << apu.average_dclk_frequency << "\n";
   }
   if (is_v30) {
-    std::cout << "average_vpeclk_frequency = " << std::dec << apu.average_vpeclk_frequency
-              << "\n";
-    std::cout << "average_ipuclk_frequency = " << std::dec << apu.average_ipuclk_frequency
-              << "\n";
+    std::cout << "average_vpeclk_frequency = " << std::dec << apu.average_vpeclk_frequency << "\n";
+    std::cout << "average_ipuclk_frequency = " << std::dec << apu.average_ipuclk_frequency << "\n";
     std::cout << "average_mpipu_frequency = " << std::dec << apu.average_mpipu_frequency << "\n";
   }
 
@@ -151,19 +149,17 @@ void PrintApuMetrics(const amdsmi_gpu_metrics_t& smu) {
     std::cout << "indep_throttle_status = " << std::dec << apu.indep_throttle_status << "\n";
   }
   if (is_v30) {
-    std::cout << "throttle_residency_prochot = " << std::dec
-              << apu.throttle_residency_prochot << "\n";
+    std::cout << "throttle_residency_prochot = " << std::dec << apu.throttle_residency_prochot
+              << "\n";
     std::cout << "throttle_residency_spl = " << std::dec << apu.throttle_residency_spl << "\n";
-    std::cout << "throttle_residency_fppt = " << std::dec << apu.throttle_residency_fppt
+    std::cout << "throttle_residency_fppt = " << std::dec << apu.throttle_residency_fppt << "\n";
+    std::cout << "throttle_residency_sppt = " << std::dec << apu.throttle_residency_sppt << "\n";
+    std::cout << "throttle_residency_thm_core = " << std::dec << apu.throttle_residency_thm_core
               << "\n";
-    std::cout << "throttle_residency_sppt = " << std::dec << apu.throttle_residency_sppt
+    std::cout << "throttle_residency_thm_gfx = " << std::dec << apu.throttle_residency_thm_gfx
               << "\n";
-    std::cout << "throttle_residency_thm_core = " << std::dec
-              << apu.throttle_residency_thm_core << "\n";
-    std::cout << "throttle_residency_thm_gfx = " << std::dec
-              << apu.throttle_residency_thm_gfx << "\n";
-    std::cout << "throttle_residency_thm_soc = " << std::dec
-              << apu.throttle_residency_thm_soc << "\n";
+    std::cout << "throttle_residency_thm_soc = " << std::dec << apu.throttle_residency_thm_soc
+              << "\n";
   }
 
   if (is_v24) {

@@ -16,8 +16,8 @@
 // -- Header (matches kernel layout) --
 struct metrics_header {
   uint16_t structure_size;
-  uint8_t  format_revision;
-  uint8_t  content_revision;
+  uint8_t format_revision;
+  uint8_t content_revision;
 };
 
 // -- APU Metrics v2.4 (format_rev=2, content_rev=4) --
@@ -385,8 +385,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)),
-                            std::istreambuf_iterator<char>());
+  std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
   if (buf.size() < sizeof(metrics_header)) {
     fprintf(stderr, "Error: File too small (%zu bytes)\n", buf.size());
@@ -405,21 +404,21 @@ int main(int argc, char* argv[]) {
 
   if (hdr.format_revision == 2 && hdr.content_revision == 4) {
     if (buf.size() < sizeof(apu_metrics_v24)) {
-      fprintf(stderr, "Error: File too small for v2.4 (%zu < %zu)\n",
-              buf.size(), sizeof(apu_metrics_v24));
+      fprintf(stderr, "Error: File too small for v2.4 (%zu < %zu)\n", buf.size(),
+              sizeof(apu_metrics_v24));
       return 1;
     }
     print_v24(buf);
   } else if (hdr.format_revision == 3 && hdr.content_revision == 0) {
     if (buf.size() < sizeof(apu_metrics_v30)) {
-      fprintf(stderr, "Error: File too small for v3.0 (%zu < %zu)\n",
-              buf.size(), sizeof(apu_metrics_v30));
+      fprintf(stderr, "Error: File too small for v3.0 (%zu < %zu)\n", buf.size(),
+              sizeof(apu_metrics_v30));
       return 1;
     }
     print_v30(buf);
   } else {
-    fprintf(stderr, "Error: Unsupported gpu_metrics version %u.%u\n",
-            hdr.format_revision, hdr.content_revision);
+    fprintf(stderr, "Error: Unsupported gpu_metrics version %u.%u\n", hdr.format_revision,
+            hdr.content_revision);
     fprintf(stderr, "       (Expected 2.4 or 3.0 for APU metrics)\n");
     return 1;
   }
