@@ -286,7 +286,9 @@ DispatchThreadTracer::resource_init()
 {
     auto rocp_agents = rocprofiler::agent::get_agents();
 
-    auto lk = std::unique_lock{agents_map_mut};
+    auto        lk            = std::unique_lock{agents_map_mut};
+    int         failed_agents = 0;
+    std::string last_error;
 
     for(const auto* rocp_agent : rocp_agents)
     {
@@ -300,7 +302,21 @@ DispatchThreadTracer::resource_init()
                        << ". This agent maybe isolated by ROCR_VISIBLE_DEVICES env variable";
             continue;
         }
-        agents[*cache] = std::make_unique<ThreadTracerQueue>(it->second, rocp_agent->id);
+        try
+        {
+            agents[*cache] = std::make_unique<ThreadTracerQueue>(it->second, rocp_agent->id);
+        } catch(const std::exception& e)
+        {
+            failed_agents++;
+            last_error = e.what();
+            continue;
+        }
+    }
+    if(failed_agents > 0)
+    {
+        ROCP_FATAL << "ATT tracing could not be initialized for " << failed_agents
+                   << " agent(s): " << last_error
+                   << ". Please verify the counter names and target architecture.";
     }
 }
 
