@@ -245,7 +245,7 @@ post_process(tim::manager* _timemory_manager, bool& _perfetto_output_error)
 
     auto _filename = config::get_perfetto_output_filename();
 
-    if(!mpi::output_filtering::is_output_enabled_for_current_rank())
+    if(mpi::output_filtering::is_output_enabled_for_current_rank())
     {
         if(!trace_data.empty())
         {

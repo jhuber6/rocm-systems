@@ -893,9 +893,10 @@ configure_settings(bool _init)
 
     ROCPROFSYS_CONFIG_SETTING(
         std::string, "ROCPROFSYS_RANK_FILTER_OUTPUT",
-        "Ranks to inlcude in profiling. Values should be separated by commas "
+        "Ranks to include in profiling. Values should be separated by commas "
         "and can be explicit or ranges, e.g. 0,1,5-8. An empty value enables output "
-        "for all ranks", std::string{ "" }, "data", "io", "advanced");
+        "for all ranks",
+        std::string{}, "data", "io", "advanced");
 
     // set the defaults
     _config->get_flamegraph_output()     = false;

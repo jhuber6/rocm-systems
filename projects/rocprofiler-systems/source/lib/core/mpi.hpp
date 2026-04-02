@@ -762,7 +762,7 @@ get_rank_from_env()
             return rank;
         } catch(const std::exception& e)
         {
-            LOG_WARNING("MPI output filtering: failed to get MPI rank from {}='{}': {}",
+            LOG_WARNING("MPI output filtering: failed to get MPI rank from {}='{}'",
                         env_var, rank_str);
         }
     }
