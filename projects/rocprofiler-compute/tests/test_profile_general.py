@@ -1,6 +1,7 @@
 # Copyright (c) Advanced Micro Devices, Inc.
 # SPDX-License-Identifier:  MIT
 
+import argparse
 import csv
 import importlib.util
 import inspect
@@ -18,6 +19,13 @@ import pandas as pd
 import pytest
 import test_utils
 from scipy.stats import zscore
+
+from rocprof_compute_profile.profiler_base import RocProfCompute_Base
+from utils.utils_exceptions import (
+    ExecutableNotFoundError,
+    NoScriptInCommandError,
+    PythonScriptNotFoundError,
+)
 
 # Runtime config options
 config = {}
@@ -3425,3 +3433,341 @@ def test_multi_rank_warning_pc_sampling(
     assert "--set" in output
 
     test_utils.clean_output_dir(config["cleanup"], workload_dir)
+
+
+@pytest.mark.parametrize(
+    "workload_cmd, torch_trace, expected_exit",
+    [
+        # torch-trace ON: sanitize() catches script issues early
+        pytest.param(
+            ["python3", "nonexistent_script_abc.py"],
+            True,
+            1,
+            marks=pytest.mark.torch_trace,
+            id="missing_script_torch_trace",
+        ),
+        pytest.param(
+            ["python3"],
+            True,
+            1,
+            marks=pytest.mark.torch_trace,
+            id="bare_interpreter_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "-v"],
+            True,
+            1,
+            marks=pytest.mark.torch_trace,
+            id="flags_only_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "nonexistent_script_abc.py"],
+            True,
+            1,
+            marks=pytest.mark.torch_trace,
+            id="missing_script_after_flags_torch_trace",
+        ),
+        # torch-trace OFF: sanitize() passes, but profiling fails at runtime
+        pytest.param(
+            ["python3", "nonexistent_script_abc.py"],
+            False,
+            1,
+            id="missing_script_no_torch_trace",
+        ),
+        pytest.param(
+            ["python3"],
+            False,
+            1,
+            id="bare_interpreter_no_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "-v"],
+            False,
+            1,
+            id="flags_only_no_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "nonexistent_script_abc.py"],
+            False,
+            1,
+            id="missing_script_after_flags_no_torch_trace",
+        ),
+        # Executable not found (independent of torch-trace)
+        pytest.param(
+            ["pythn3", "script.py"],
+            True,
+            1,
+            marks=pytest.mark.torch_trace,
+            id="typo_in_executable_torch_trace",
+        ),
+        pytest.param(
+            ["pythn3", "script.py"],
+            False,
+            1,
+            id="typo_in_executable_no_torch_trace",
+        ),
+        pytest.param(
+            ["./no_such_binary"],
+            True,
+            1,
+            marks=pytest.mark.torch_trace,
+            id="nonexistent_binary_torch_trace",
+        ),
+        pytest.param(
+            ["./no_such_binary"],
+            False,
+            1,
+            id="nonexistent_binary_no_torch_trace",
+        ),
+        # Non-GPU workload: runs successfully but produces no GPU kernels
+        pytest.param(
+            ["python3", "-c", "print('hello')"],
+            False,
+            0,
+            id="non_gpu_workload_no_torch_trace",
+        ),
+    ],
+)
+def test_profile_invalid_workloads(
+    binary_handler_profile_rocprof_compute,
+    workload_cmd,
+    torch_trace,
+    expected_exit,
+    request,
+):
+    """Integration test: workload validation and error handling exit codes."""
+    app_name = "test_invalid_workload"
+    test_config = {**config, app_name: workload_cmd}
+
+    workload_dir = test_utils.get_output_dir(
+        param_id=f"invalid_wl_{request.node.callspec.id}"
+    )
+
+    options = ["--experimental", "--torch-trace"] if torch_trace else []
+
+    returncode, stdout, stderr = binary_handler_profile_rocprof_compute(
+        test_config,
+        workload_dir,
+        options=options,
+        check_success=False,
+        app_name=app_name,
+        capture_output=True,
+    )
+
+    assert returncode == expected_exit, (
+        f"Expected exit code {expected_exit} for {workload_cmd}, "
+        f"got {returncode}.\nstdout: {stdout}\nstderr: {stderr}"
+    )
+
+    test_utils.clean_output_dir(config["cleanup"], workload_dir)
+
+
+def _make_sanitize_args(remaining, torch_trace=False):
+    """Build a minimal argparse.Namespace for sanitize() unit tests."""
+    return argparse.Namespace(
+        filter_blocks=[],
+        set_selected=None,
+        roof_only=False,
+        path="/tmp/test_workload",
+        no_native_tool=False,
+        iteration_multiplexing=None,
+        attach_pid=None,
+        remaining=["--"] + remaining,
+        torch_trace=torch_trace,
+    )
+
+
+@pytest.mark.parametrize(
+    "remaining, torch_trace, expected_exception",
+    [
+        # torch-trace: script validation raises specific exceptions
+        pytest.param(
+            ["python3", "nonexistent_script_abc.py"],
+            True,
+            PythonScriptNotFoundError,
+            marks=pytest.mark.torch_trace,
+            id="missing_script_torch_trace",
+        ),
+        pytest.param(
+            ["python3"],
+            True,
+            NoScriptInCommandError,
+            marks=pytest.mark.torch_trace,
+            id="bare_interpreter_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "-v"],
+            True,
+            NoScriptInCommandError,
+            marks=pytest.mark.torch_trace,
+            id="flags_only_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "nonexistent_script_abc.py"],
+            True,
+            PythonScriptNotFoundError,
+            marks=pytest.mark.torch_trace,
+            id="missing_script_after_flags_torch_trace",
+        ),
+        # Bare interpreter (same exception with and without torch-trace)
+        pytest.param(
+            ["python3"],
+            False,
+            NoScriptInCommandError,
+            id="bare_interpreter_no_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "-v"],
+            False,
+            NoScriptInCommandError,
+            id="flags_only_no_torch_trace",
+        ),
+        # Executable validation (same exception with and without torch-trace)
+        pytest.param(
+            ["pythn3", "script.py"],
+            True,
+            ExecutableNotFoundError,
+            marks=pytest.mark.torch_trace,
+            id="typo_in_executable_torch_trace",
+        ),
+        pytest.param(
+            ["pythn3", "script.py"],
+            False,
+            ExecutableNotFoundError,
+            id="typo_in_executable_no_torch_trace",
+        ),
+        pytest.param(
+            ["./no_such_binary"],
+            True,
+            ExecutableNotFoundError,
+            marks=pytest.mark.torch_trace,
+            id="nonexistent_binary_torch_trace",
+        ),
+        pytest.param(
+            ["./no_such_binary"],
+            False,
+            ExecutableNotFoundError,
+            id="nonexistent_binary_no_torch_trace",
+        ),
+    ],
+)
+def test_profile_sanitize_raises_expected_exception(
+    remaining, torch_trace, expected_exception
+):
+    """Unit test: sanitize() raises the correct exception type."""
+    args = _make_sanitize_args(remaining, torch_trace=torch_trace)
+    profiler = RocProfCompute_Base(args, profiler_mode="rocprofiler-sdk", soc=None)
+    with pytest.raises(expected_exception):
+        profiler.sanitize()
+
+
+@pytest.mark.parametrize(
+    "remaining, torch_trace, setup",
+    [
+        # -c/-m: valid with both torch-trace and without
+        pytest.param(
+            ["python3", "-c", "print(1)"],
+            True,
+            None,
+            marks=pytest.mark.torch_trace,
+            id="dash_c_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-c", "print(1)"],
+            False,
+            None,
+            id="dash_c_no_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-m", "json.tool", "--help"],
+            True,
+            None,
+            marks=pytest.mark.torch_trace,
+            id="dash_m_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-m", "json.tool", "--help"],
+            False,
+            None,
+            id="dash_m_no_torch_trace",
+        ),
+        # Without torch-trace: sanitize() does not validate Python arguments,
+        # so these pass sanitize even though profiling fails at runtime
+        # (see test_profile_invalid_workloads for the end-to-end check).
+        pytest.param(
+            ["python3", "nonexistent_script_abc.py"],
+            False,
+            None,
+            id="missing_script_no_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "nonexistent_script_abc.py"],
+            False,
+            None,
+            id="missing_script_after_flags_no_torch_trace",
+        ),
+        # Valid script with interpreter flags
+        pytest.param(
+            ["python3", "-u", "{script}"],
+            True,
+            "script",
+            marks=pytest.mark.torch_trace,
+            id="script_after_single_flag_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-u", "{script}"],
+            False,
+            "script",
+            id="script_after_single_flag_no_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-W", "ignore", "-u", "{script}"],
+            True,
+            "script",
+            marks=pytest.mark.torch_trace,
+            id="script_after_multi_flags_torch_trace",
+        ),
+        pytest.param(
+            ["python3", "-W", "ignore", "-u", "{script}"],
+            False,
+            "script",
+            id="script_after_multi_flags_no_torch_trace",
+        ),
+        # Case 2: Direct .py script execution with torch-trace
+        pytest.param(
+            ["{exec_script}"],
+            True,
+            "exec_script",
+            marks=pytest.mark.torch_trace,
+            id="direct_py_script",
+        ),
+        # Non-Python binary with torch-trace (warns but doesn't raise)
+        pytest.param(
+            ["{binary}"],
+            True,
+            "binary",
+            marks=pytest.mark.torch_trace,
+            id="non_python_binary_torch_trace",
+        ),
+    ],
+)
+def test_profile_sanitize_no_exception(tmp_path, remaining, torch_trace, setup):
+    """Unit test: sanitize() completes without raising for valid commands."""
+    if setup == "script":
+        script = tmp_path / "good_script.py"
+        script.write_text("print('ok')\n")
+        remaining = [s.replace("{script}", str(script)) for s in remaining]
+    elif setup == "exec_script":
+        script = tmp_path / "main.py"
+        script.write_text("print('ok')\n")
+        script.chmod(0o755)
+        remaining = [s.replace("{exec_script}", str(script)) for s in remaining]
+    elif setup == "binary":
+        binary = tmp_path / "my_binary"
+        binary.write_text("#!/bin/sh\necho hello\n")
+        binary.chmod(0o755)
+        remaining = [s.replace("{binary}", str(binary)) for s in remaining]
+
+    args = _make_sanitize_args(remaining, torch_trace=torch_trace)
+    profiler = RocProfCompute_Base(args, profiler_mode="rocprofiler-sdk", soc=None)
+    profiler.sanitize()
