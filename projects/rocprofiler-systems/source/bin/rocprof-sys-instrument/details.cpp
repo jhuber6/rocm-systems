@@ -841,7 +841,7 @@ using ::timemory::join::join;
 
 std::vector<procedure_t*>*
 get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
-               bool include_uninstr)
+               bool include_uninstrumentable)
 {
     // Timing and memory usage
     auto _wc = tim::component::wall_clock{};
@@ -854,7 +854,7 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
     {
         verbprintf(2, "No modules found, falling back to "
                       "app_image->getProcedures()...\n");
-        auto* _procs = app_image->getProcedures(include_uninstr);
+        auto* _procs = app_image->getProcedures(include_uninstrumentable);
 
         _pr.stop();
         _wc.stop();
@@ -872,9 +872,7 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
     // internally uses Dyninst's Symtab API (faster)
     const auto& _internal_libs = get_internal_libs_data();
 
-    auto* proclist       = new std::vector<procedure_t*>{};
-    bool  some_succeeded = false;
-
+    auto*  proclist        = new std::vector<procedure_t*>{};
     size_t _excluded_count = 0;
     size_t _included_count = 0;
 
@@ -896,7 +894,7 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
             _is_internal = true;
         }
 
-        // If not, check if module appears as a sub-entry in any internal library
+        // Check if module appears as a sub-entry in any internal library
         if(!_is_internal)
         {
             for(const auto& [lib_path, sub_map] : _internal_libs)
@@ -920,7 +918,7 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
             continue;
         }
 
-        // -ME: skip if module matches an exclude regex
+        // -ME: skip if module matches
         for(const auto& re : file_exclude)
         {
             if(std::regex_search(_module_name, re))
@@ -932,7 +930,7 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
             }
         }
 
-        // -MR: skip if restrict is specified and module does NOT match
+        // -MR: skip if module does NOT match
         if(!_is_internal && !file_restrict.empty())
         {
             bool _matched = false;
@@ -952,7 +950,7 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
             }
         }
 
-        // -MI: if module matches an include regex, force it through
+        // -MI: add if module matches
         if(_is_internal)
         {
             for(const auto& re : file_include)
@@ -974,24 +972,21 @@ get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
         }
 
         ++_included_count;
-        auto* procs = mod->getProcedures(include_uninstr);
+        auto* procs = mod->getProcedures(include_uninstrumentable);
         if(procs && !procs->empty())
-        {
             proclist->insert(proclist->end(), procs->begin(), procs->end());
-            some_succeeded = true;
-        }
     }
 
     _pr.stop();
     _wc.stop();
     verbprintf(0,
-               "Fetching procedures from %zu modules (%zu included, %zu excluded): "
+               "Fetched procedures from %zu of %zu modules (%zu excluded): "
                "%zu procedures found (%.3f %s, %.3f %s)\n",
-               app_modules->size(), _included_count, _excluded_count, proclist->size(),
+               _included_count, app_modules->size(), _excluded_count, proclist->size(),
                _wc.get(), _wc.display_unit().c_str(), _pr.get(),
                _pr.display_unit().c_str());
 
-    if(!some_succeeded)
+    if(proclist->empty())
     {
         delete proclist;
         return nullptr;

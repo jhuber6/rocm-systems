@@ -380,7 +380,7 @@ get_symtab_function(procedure_t*);
 
 std::vector<procedure_t*>*
 get_procedures(image_t* app_image, std::vector<module_t*>* app_modules,
-               bool include_uninstr);
+               bool include_uninstrumentable);
 
 namespace std
 {
