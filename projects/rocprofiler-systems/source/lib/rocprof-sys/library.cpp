@@ -1192,6 +1192,18 @@ rocprofsys_finalize_hidden(void)
                tim::cereal::make_nvp("memory_maps", _maps));
         });
 
+        // Disable Timemory file output for disabled ranks
+        if(!mpi::output_filtering::is_output_enabled_for_current_rank())
+        {
+            auto* _settings = tim::settings::instance();
+            if(_settings)
+            {
+                _settings->file_output() = false;
+                _settings->text_output() = false;
+                _settings->json_output() = false;
+            }
+        }
+
         LOG_DEBUG("Finalizing timemory...");
         tim::timemory_finalize(_timemory_manager.get());
 

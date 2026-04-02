@@ -374,6 +374,12 @@ int
 get_kill_delay();
 
 std::string
+get_rank_filter_id();
+
+std::string
+get_rank_filter_output();
+
+std::string
 get_tmpdir();
 
 std::string
