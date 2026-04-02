@@ -72,8 +72,7 @@ void GDABackend::bnxt_initialize_gpu_qp(QueuePair* gpu_qp, int conn_num) {
   gpu_qp->bnxt_sq.msntbl      = bnxt_qps[conn_num].msntbl;
   gpu_qp->bnxt_sq.msn_tbl_sz  = bnxt_qps[conn_num].msn_tbl_sz;
   gpu_qp->bnxt_sq.psn_sz_log2 = std::log2(bnxt_qps[conn_num].mem_info.sq_psn_sz);
-  int nic_idx = nic_for_qp_row(conn_num / num_pes);
-  auto &nic = nic_devices_[nic_idx];
+  NicDevice &nic = nic_for_qp(conn_num);
   gpu_qp->bnxt_sq.mtu         = ibv_mtu_to_int(nic.portinfo.active_mtu);
 
   /* Export DB */
@@ -82,8 +81,9 @@ void GDABackend::bnxt_initialize_gpu_qp(QueuePair* gpu_qp, int conn_num) {
 
   /* Export Memory Keys */
   int pe = conn_num % num_pes;
+  int nic_idx = nic_idx_for_qp_row(conn_num / num_pes);
   gpu_qp->lkey = nic.heap_mr->lkey;
-  gpu_qp->rkey = heap_rkey[pe * num_nics() + nic_idx];
+  gpu_qp->rkey = heap_rkey[pe * num_nics_ + nic_idx];
 
   /* Export Inline Threshold */
   gpu_qp->inline_threshold = inline_threshold;
@@ -101,8 +101,7 @@ void GDABackend::bnxt_create_cqs(int cqe) {
 
   /* Create SCQs */
   for (int i = 0; i < qps.size(); i++) {
-    int nic_idx = nic_for_qp_row(i / num_pes);
-    auto *ctx = nic_devices_[nic_idx].context;
+    auto *ctx = nic_for_qp(i).context;
 
     /* Allocate SCQ mem */
     memset(&cq_attr, 0, sizeof(struct bnxt_re_dv_cq_attr));
@@ -147,8 +146,7 @@ void GDABackend::bnxt_create_cqs(int cqe) {
 
   /* Create RCQs */
   for (int i = 0; i < qps.size(); i++) {
-    int nic_idx = nic_for_qp_row(i / num_pes);
-    auto *ctx = nic_devices_[nic_idx].context;
+    auto *ctx = nic_for_qp(i).context;
 
     /* Allocate RCQ mem */
     memset(&cq_attr, 0, sizeof(struct bnxt_re_dv_cq_attr));
@@ -203,8 +201,7 @@ void GDABackend::bnxt_create_qps(int sq_length) {
   int dmabuf_enabled = ibv.is_dmabuf_supported();
 
   for (int i = 0; i < qps.size(); i++) {
-    int nic_idx = nic_for_qp_row(i / num_pes);
-    auto &nic = nic_devices_[nic_idx];
+    NicDevice &nic = nic_for_qp(i);
     auto *ctx = nic.context;
     auto *pd  = nic.pd_orig;
 

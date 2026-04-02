@@ -887,7 +887,7 @@ namespace rocshmem
       // actual PCIe node (address contains ':' like "0000:01:00.0" or
       // "pci0000:00").  On multi-socket systems, devices on different root
       // complexes still share a sysfs ancestor (e.g. "devices"), which the
-      // tree walk finds — but that is not a real PCIe relationship.
+      // tree walk finds, but that is not a real PCIe relationship.
       bool lcaIsPCIeNode = lca->address.find(':') != std::string::npos;
 
       if (lcaIsPCIeNode) {
@@ -1114,19 +1114,12 @@ namespace rocshmem
 
     int numGpus = rocshmem::GetNumDevices(rocshmem::EXE_GPU);
     auto const& ibvDeviceList = rocshmem::GetIbvDeviceList();
-
-    // Build GPU→closest-NIC-name mapping
-    std::vector<std::string> gpuClosestNic(numGpus);
-    for (int j = 0; j < numGpus; j++) {
-      rocshmem::GetClosestNicToGpu(j, nullptr, &gpuClosestNic[j]);
-    }
-
     for (int i = 0; i < ibvDeviceList.size(); i++) {
 
-      std::string closestGpusStr;
+      std::string closestGpusStr = "";
       for (int j = 0; j < numGpus; j++) {
-        if (gpuClosestNic[j] == ibvDeviceList[i].name) {
-          if (!closestGpusStr.empty()) closestGpusStr += ",";
+        if (rocshmem::GetClosestNicToGpu(j, nullptr, nullptr) == i) {
+          if (closestGpusStr != "") closestGpusStr += ",";
           closestGpusStr += std::to_string(j);
         }
       }

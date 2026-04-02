@@ -69,8 +69,7 @@ void GDABackend::mlx5_create_qps(int sq_length) {
   attr.qp_type             = IBV_QPT_RC;
   attr.comp_mask           = IBV_QP_INIT_ATTR_PD;
   for (size_t i = 0; i < mlx5_qps.size(); i++) {
-    int nic_idx = nic_for_qp_row(i / num_pes);
-    auto &nic = nic_devices_[nic_idx];
+    NicDevice &nic = nic_for_qp(i);
     attr.pd      = nic.pd_orig;
     attr.send_cq = cqs[i];
     attr.recv_cq = cqs[i];
@@ -139,10 +138,10 @@ void GDABackend::mlx5_initialize_gpu_qp(QueuePair* gpu_qp, int conn_num) {
                                        reinterpret_cast<gda_mlx5_doorbell*>(gpu_db_ptr),
                                        static_cast<uint16_t>(qp.sq_depth)};
 
-  int nic_idx = nic_for_qp_row(conn_num / num_pes);
-  auto &nic = nic_devices_[nic_idx];
+  NicDevice &nic = nic_for_qp(conn_num);
+  int nic_idx = nic_idx_for_qp_row(conn_num / num_pes);
   int pe = conn_num % num_pes;
-  gpu_qp->rkey = htobe32(heap_rkey[pe * num_nics() + nic_idx]);
+  gpu_qp->rkey = htobe32(heap_rkey[pe * num_nics_ + nic_idx]);
   gpu_qp->lkey = htobe32(nic.heap_mr->lkey);
   gpu_qp->qp_num = qp.qpn;
   gpu_qp->inline_threshold = inline_threshold;

@@ -65,13 +65,17 @@ struct NicDevice {
   struct ibv_context *context = nullptr;
   struct ibv_device_attr device_attr {};
   struct ibv_pd *pd_orig = nullptr;
-  struct ibv_pd *pd_parent = nullptr;
   struct ibv_port_attr portinfo {};
   union ibv_gid gid {};
   int port = 1;
   int gid_index = 0;
   uint32_t gid_type = 0;
   struct ibv_mr *heap_mr = nullptr;
+
+  /* GDA_IONIC & GDA_MLX5*/
+  struct ibv_pd *pd_parent = nullptr;
+
+  /* GDA_IONIC */
   struct ibv_pd *pd_uxdma[2] = {nullptr, nullptr};
 };
 
@@ -88,10 +92,8 @@ class GDABackend : public Backend {
 
   uint32_t *heap_rkey = nullptr;
 
-  /* NIC Fusion: multiple NIC devices, always at least 1 entry */
   std::vector<NicDevice> nic_devices_;
-
-  std::string debug_str;
+  int num_nics_{0};
 
   uint32_t inline_threshold = 8;
   QueuePair *host_qps = nullptr;
@@ -123,14 +125,18 @@ class GDABackend : public Backend {
    */
   void select_nics();
 
-  int num_nics() const { return static_cast<int>(nic_devices_.size()); }
-
   /**
    * @brief Returns the NIC index for a given QP row (or context index).
-   *        Always safe: with 1 NIC returns 0; with N NICs round-robins.
    */
-  int nic_for_qp_row(int qp_row) const {
-    return qp_row % num_nics();
+  int nic_idx_for_qp_row(int qp_row) const {
+    return qp_row % num_nics_;
+  }
+
+  /**
+   * @brief Returns the NicDevice for a given flat QP index.
+   */
+  NicDevice& nic_for_qp(int qp_idx) {
+    return nic_devices_[nic_idx_for_qp_row(qp_idx / num_pes)];
   }
 
   /**
@@ -382,9 +388,9 @@ class GDABackend : public Backend {
   void open_ib_device();
 
   /**
-   * @brief Validated the rocSHMEM will run with the currently open InfiniBand Device
+   * @brief Validated the rocSHMEM will run with the InfiniBand Device
    */
-  void validate_ib_device();
+  void validate_ib_device(NicDevice &nic);
 
   /**
    * @brief Selects the best GID index

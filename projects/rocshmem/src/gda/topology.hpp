@@ -302,14 +302,12 @@ namespace rocshmem
   int GetClosestCpuNumaToNic(int nicIndex);
 
   /**
-   * Returns the closest NIC to the given GPU.
-   * Uses PCIe tree proximity with round-robin distribution when multiple GPUs
-   * share the same closest NIC. Results are cached on first call.
+   * Returns the index of the NIC closest to the given GPU
    *
-   * @param[in]  gpuIndex  Index of the GPU to query
-   * @param[in]  hca_list  Include/exclude list of device names (Exclude if prefixed by ^)
-   * @param[out] dev_name  If non-null, populated with the NIC device name
-   * @returns    NIC index in the IB device list, or -1 if not found
+   * @param[in] gpuIndex Index of the GPU to query
+   * @param[in] hca_list Include list of device names that can be used (Exclude if prefixed by ^)
+   * @param[out] dev_name Name of of IB Verbs capable NIC index closest to GPU gpuIndex
+   * @returns index of IB Verbs capable NIC index closest to GPU gpuIndex, or -1 if unable to detect
    */
   int GetClosestNicToGpu(int gpuIndex, const char* hca_list,
                          std::string *dev_name);

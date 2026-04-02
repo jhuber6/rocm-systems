@@ -44,7 +44,7 @@ std::string IbvDeviceNameAtIndex(int nicIndex) {
   return out;
 }
 
-// ibverbs-style device names for NICs with active ports (same source as topology).
+// ibverbs-style device names for NICs with active ports
 bool CollectActiveNicNamesForGpu0(std::vector<std::string>* out_names) {
   out_names->clear();
   if (GetNumDevices(EXE_GPU) == 0 || GetNumDevices(EXE_NIC) == 0) return false;
@@ -414,12 +414,14 @@ TEST_F(TopologyTestFixture, BuildFilteredNicAddressesIncludeTwoRealNames) {
 
 // Test GetClosestNicToGpu function (single-NIC selection)
 TEST_F(TopologyTestFixture, GetClosestNicToGpuInvalidIndex) {
+  // Test with invalid GPU index (negative)
   int result = GetClosestNicToGpu(-1, nullptr, nullptr);
   EXPECT_EQ(result, -1);
 }
 
 TEST_F(TopologyTestFixture, GetClosestNicToGpuTooLarge) {
   int numGpus = GetNumDevices(EXE_GPU);
+  // Test with GPU index >= number of GPUs
   int result = GetClosestNicToGpu(numGpus + 10, nullptr, nullptr);
   EXPECT_EQ(result, -1);
 }
