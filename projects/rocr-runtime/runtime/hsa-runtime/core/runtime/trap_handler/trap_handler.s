@@ -445,7 +445,7 @@ trap_entry:
   // [0x14]  uint32_t workgroup_id_y;
   // [0x18]  uint32_t workgroup_id_z;
   // [0x1c]  uint32_t wave_in_wg : 6;
-  //         uint32_t chiplet    : 3;    // Currently not used
+  //         uint32_t chiplet    : 3;    // XCC_ID on gfx9.4+
   //         uint32_t reserved   : 23;
   // [0x20]  uint32_t hw_id;
   // [0x24]  uint32_t reserved0;
@@ -460,7 +460,8 @@ trap_entry:
   //    buf->workgroup_id_x = ttmp8;
   //    buf->workgroup_id_y = ttmp9;
   //    buf->workgroup_id_z = ttmp10;
-  //    buf->chiplet_and_wave_id = ttmp11 & 0x3f;
+  //    // gfx9.4+: chiplet = HW_REG_XCC_ID, packed into bits [8:6]
+  //    buf->chiplet_and_wave_id = (s_getreg_b32(HW_REG_XCC_ID) << 6) | (ttmp11 & 0x3f);
   //    buf->hw_id = s_getreg_b32(HW_REG_HW_ID);
   //    buf->timestamp = s_memrealtime;
   //    buf->correlation_id = get_correlation_id();
@@ -484,10 +485,10 @@ trap_entry:
 
 .if (.amdgcn.gfx_generation_number == 9 && .amdgcn.gfx_generation_minor >= 4)
   s_getreg_b32                          ttmp4, hwreg(HW_REG_XCC_ID)     //store XCC_ID
-  s_lshl_b32                            ttmp4, ttmp4, 8
+  s_lshl_b32                            ttmp4, ttmp4, 6                 // shift to bits [8:6] for chiplet field
   s_and_b32                             ttmp5, ttmp11, TTMP11_WAVE_IN_WG_MASK
   s_or_b32                              ttmp4, ttmp4, ttmp5
-  s_store_dword                         ttmp4, ttmp[2:3], 0x1c          // store wave_in_wg
+  s_store_dword                         ttmp4, ttmp[2:3], 0x1c          // store wave_in_wg and chiplet
 .else
   s_and_b32                             ttmp4, ttmp11, 0x3f
   s_store_dword                         ttmp4, ttmp[2:3], 0x1c          // store wave_in_wg
@@ -522,10 +523,10 @@ trap_entry:
   s_store_dwordx2                       ttmp[8:9], ttmp[2:3], 0x10      // store wg_id_x and wg_id_y
   s_store_dword                         ttmp10, ttmp[2:3], 0x18         // store wg_id_z
   s_getreg_b32                          ttmp4, hwreg(HW_REG_XCC_ID)
-  s_lshl_b32                            ttmp4, ttmp4, 8
+  s_lshl_b32                            ttmp4, ttmp4, 6                 // shift to bits [8:6] for chiplet field
   s_and_b32                             ttmp5, ttmp11, TTMP11_WAVE_IN_WG_MASK
   s_or_b32                              ttmp4, ttmp4, ttmp5
-  s_store_dword                         ttmp4, ttmp[2:3], 0x1c          // store chiplet_and_wave_id
+  s_store_dword                         ttmp4, ttmp[2:3], 0x1c          // store wave_in_wg and chiplet
   s_getreg_b32                          ttmp4, hwreg(HW_REG_HW_ID)
   s_store_dword                         ttmp4, ttmp[2:3], 0x20          // store HW_ID
   // ttmp[2:3]=&buffer[local_entry]; ttmp[4:5], ttmp[6:7] are free
