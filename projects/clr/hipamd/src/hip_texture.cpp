@@ -304,12 +304,12 @@ hipError_t ihipCreateTextureObject(hipTextureObject_t* pTexObject, const hipReso
       const cl_mem_object_type imageType = hip::getCLMemObjectType(pResDesc->resType);
       const size_t imageSizeInBytes = pResDesc->res.linear.sizeInBytes;
       if (!ValidateDevicePointer(pResDesc->res.linear.devPtr)) {
-        return hipErrorInvalidValue;
+        return hipErrorInvalidChannelDescriptor;
       }
       amd::Memory* buffer =
           getMemoryObjectWithOffset(pResDesc->res.linear.devPtr, imageSizeInBytes);
       if (buffer == nullptr) {
-        return hipErrorInvalidValue;
+        return hipErrorInvalidChannelDescriptor;
       }
 
       hipError_t status = hipSuccess;
