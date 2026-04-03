@@ -653,7 +653,22 @@ case $TEST in
     ##############################################################################
     #       | Name             | Ranks | Workgroups | Threads | Max Message Size #
     ##############################################################################
-    ExecTest  $TEST              2       1            1         8
+    # Allow passing in a test config as "<name> <ranks> <workgroups> <threads> [max_msg_size]"
+    # e.g. "putnbi 2 8 1024 65536" or "amo_fadd 2 1 64"
+    TEST_OPTS=($TEST)
+    NAME=${TEST_OPTS[0]}
+    if [ ${#TEST_OPTS[@]} -gt 1 ]; then
+      RANKS=${TEST_OPTS[1]}
+      WORKGROUPS=${TEST_OPTS[2]}
+      THREADS=${TEST_OPTS[3]}
+      MAX_MESSAGE_SIZE=${TEST_OPTS[4]}
+    else
+      RANKS=2
+      WORKGROUPS=1
+      THREADS=1
+      MAX_MESSAGE_SIZE=8
+    fi
+    ExecTest $NAME              $RANKS  $WORKGROUPS  $THREADS  $MAX_MESSAGE_SIZE
     ;;
 esac
 
