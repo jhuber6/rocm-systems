@@ -82,14 +82,16 @@ cpu_freq::configure()
     auto _enabled_freqs = std::set<uint64_t>{};
 
     auto _enabled_val = get_sampling_cpus();
+
+    // Remove leading/trailing spaces and make lowercase
+    _enabled_val.erase(0, _enabled_val.find_first_not_of(" \t"));
+    _enabled_val.erase(_enabled_val.find_last_not_of(" \t") + 1);
     for(auto& itr : _enabled_val)
         itr = tolower(itr);
-    if(_enabled_val == "off")
-        _enabled_val = "none";
-    else if(_enabled_val == "on" || _enabled_val.empty())
-        _enabled_val = "all";
-    bool _all_cpus = _enabled_val.find("all") != std::string::npos;
-    bool _no_cpus  = _enabled_val.find("none") != std::string::npos;
+
+    bool _all_cpus =
+        (_enabled_val.empty() || _enabled_val == "all" || _enabled_val == "on");
+    bool _no_cpus = (_enabled_val == "none" || _enabled_val == "off");
 
     if(_all_cpus)
     {
