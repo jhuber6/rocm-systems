@@ -744,9 +744,14 @@ namespace output_filtering
 inline std::optional<uint64_t>
 get_rank_from_env()
 {
+    std::string user_rank_env_var = get_rank_filter_id();
+    // Remove leading/trailing spaces
+    user_rank_env_var.erase(0, user_rank_env_var.find_first_not_of(" \t"));
+    user_rank_env_var.erase(user_rank_env_var.find_last_not_of(" \t") + 1);
+
     const std::vector<std::string> rank_env_var_options = {
         // rank env vars: user-provided then most generic to most runtime-specific
-        get_rank_filter_id(),  "MPI_RANK",
+        user_rank_env_var,     "MPI_RANK",
         "MPI_LOCALRANKID",     "MPI_RANKID",
         "MV2_COMM_WORLD_RANK", "OMPI_COMM_WORLD_RANK"
     };
@@ -780,6 +785,9 @@ is_output_enabled_for_current_rank()
     (defined(ROCPROFSYS_USE_MPI) && ROCPROFSYS_USE_MPI > 0)
 
     auto enabled_ranks_str = get_rank_filter_output();
+    // Remove leading/trailing spaces and make lowercase
+    enabled_ranks_str.erase(0, enabled_ranks_str.find_first_not_of(" \t"));
+    enabled_ranks_str.erase(enabled_ranks_str.find_last_not_of(" \t") + 1);
     for(auto& ch : enabled_ranks_str)
         ch = std::tolower(ch);
 
