@@ -81,11 +81,7 @@ cpu_freq::configure()
     auto _ncpu          = cpuinfo::freq::size();
     auto _enabled_freqs = std::set<uint64_t>{};
 
-    auto _enabled_val = get_sampling_cpus();
-
-    // Remove leading/trailing spaces and make lowercase
-    _enabled_val.erase(0, _enabled_val.find_first_not_of(" \t"));
-    _enabled_val.erase(_enabled_val.find_last_not_of(" \t") + 1);
+    auto _enabled_val = rocprofsys::utility::trim_str(get_sampling_cpus());
     for(auto& itr : _enabled_val)
         itr = tolower(itr);
 

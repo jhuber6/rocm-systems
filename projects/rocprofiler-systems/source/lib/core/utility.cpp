@@ -122,5 +122,14 @@ parse_numeric_range<int64_t, std::vector<int64_t>>(std::string, const std::strin
 template std::unordered_set<int64_t>
 parse_numeric_range<int64_t, std::unordered_set<int64_t>>(std::string, const std::string&,
                                                           long);
+
+std::string
+trim_str(std::string str)
+{
+    str.erase(0, str.find_first_not_of(" \t"));
+    str.erase(str.find_last_not_of(" \t") + 1);
+    return str;
+}
+
 }  // namespace utility
 }  // namespace rocprofsys
