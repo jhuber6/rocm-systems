@@ -1,6 +1,7 @@
 // Copyright (c) Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: MIT
 
+#include "common/env_vars.hpp"
 #include "common/path.hpp"
 
 #include <algorithm>
@@ -73,7 +74,8 @@ setup_output_env(const std::string& output_path)
 {
     if(output_path.empty()) return;
 
-    setenv("ROCPROFSYS_OUTPUT_PATH", output_path.c_str(), 1);
+    setenv(std::string{ rocprofsys::env_vars::OUTPUT_PATH }.c_str(), output_path.c_str(),
+           1);
     std::cout << "[rocprof-sys-attach] Output path: " << output_path << std::endl;
 }
 
@@ -88,12 +90,12 @@ setup_output_format_env(const std::vector<std::string>& formats)
 
     if(has_format("perfetto"))
     {
-        setenv("ROCPROFSYS_TRACE", "true", 1);
+        setenv(std::string{ rocprofsys::env_vars::TRACE }.c_str(), "true", 1);
     }
 
     if(has_format("rocpd"))
     {
-        setenv("ROCPROFSYS_USE_ROCPD", "true", 1);
+        setenv(std::string{ rocprofsys::env_vars::USE_ROCPD }.c_str(), "true", 1);
     }
 
     std::cout << "[rocprof-sys-attach] Output format:";
