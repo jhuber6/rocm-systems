@@ -512,7 +512,8 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
     {
         _parser
             .add_argument({ "--rank-filter-id" },
-                          "Sets the name of environment variable used to represent rank")
+                          "Sets the name of environment variable to read rank from for "
+                          "MPI output filtering")
             .max_count(1)
             .dtype("string")
             .required({ "rank-filter-output" })
@@ -528,7 +529,9 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
     {
         _parser
             .add_argument({ "--rank-filter-output" },
-                          "Sets range that represents the ranks to include")
+                          "Ranks for which file output is generated. Values should be "
+                          "separated by commas and can be explicit or ranges, e.g. "
+                          "0,1,5-8. An empty value enables output for all ranks")
             .max_count(1)
             .dtype("int and/or range")
             .action([&](parser_t& p) {

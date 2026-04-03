@@ -887,13 +887,14 @@ configure_settings(bool _init)
         kill_delay_config->set(0);
     }
 
-    ROCPROFSYS_CONFIG_SETTING(std::string, "ROCPROFSYS_RANK_FILTER_ID",
-                              "Name of environment variable used to represent rank",
-                              std::string{}, "data", "io", "advanced");
+    ROCPROFSYS_CONFIG_SETTING(
+        std::string, "ROCPROFSYS_RANK_FILTER_ID",
+        "Name of environment variable to read rank from for MPI output filtering",
+        std::string{}, "data", "io", "advanced");
 
     ROCPROFSYS_CONFIG_SETTING(
         std::string, "ROCPROFSYS_RANK_FILTER_OUTPUT",
-        "Ranks to include in profiling. Values should be separated by commas "
+        "Ranks for which file output is generated. Values should be separated by commas "
         "and can be explicit or ranges, e.g. 0,1,5-8. An empty value enables output "
         "for all ranks",
         std::string{}, "data", "io", "advanced");
