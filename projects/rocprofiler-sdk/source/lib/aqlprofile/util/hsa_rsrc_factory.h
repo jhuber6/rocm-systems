@@ -42,6 +42,16 @@
 #include <string>
 #include <vector>
 
+namespace rocprofiler {
+namespace aqlprofile {
+
+void hsa_rsrc_factory_init(::HsaApiTable* table);
+const ::CoreApiTable* get_core_table();
+const ::AmdExtTable* get_amd_ext_table();
+
+}  // namespace aqlprofile
+}  // namespace rocprofiler
+
 #define HSA_ARGUMENT_ALIGN_BYTES 16
 #define HSA_QUEUE_ALIGN_BYTES 64
 #define HSA_PACKET_ALIGN_BYTES 64
@@ -50,7 +60,7 @@
   do {                                                          \
     if ((status) != HSA_STATUS_SUCCESS) {                       \
       const char* emsg = 0;                                     \
-      hsa_status_string(status, &emsg);                         \
+      rocprofiler::aqlprofile::get_core_table()->hsa_status_string_fn(status, &emsg);                         \
       printf("%s: %s\n", msg, emsg ? emsg : "<unknown error>"); \
       abort();                                                  \
     }                                                           \
@@ -60,7 +70,7 @@
   do {                                                          \
     if ((status) != HSA_STATUS_INFO_BREAK) {                    \
       const char* emsg = 0;                                     \
-      hsa_status_string(status, &emsg);                         \
+      rocprofiler::aqlprofile::get_core_table()->hsa_status_string_fn(status, &emsg);                         \
       printf("%s: %s\n", msg, emsg ? emsg : "<unknown error>"); \
       abort();                                                  \
     }                                                           \
@@ -143,7 +153,7 @@ class HsaTimer {
 
   HsaTimer() {
     timestamp_t sysclock_hz = 0;
-    hsa_status_t status = hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &sysclock_hz);
+    hsa_status_t status = rocprofiler::aqlprofile::get_core_table()->hsa_system_get_info_fn(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &sysclock_hz);
     CHECK_STATUS("hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY)", status);
     sysclock_factor_ = (freq_t)1000000000 / (freq_t)sysclock_hz;
   }
@@ -159,7 +169,7 @@ class HsaTimer {
   // Return timestamp in 'ns'
   timestamp_t timestamp_ns() const {
     timestamp_t sysclock;
-    hsa_status_t status = hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sysclock);
+    hsa_status_t status = rocprofiler::aqlprofile::get_core_table()->hsa_system_get_info_fn(HSA_SYSTEM_INFO_TIMESTAMP, &sysclock);
     CHECK_STATUS("hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP)", status);
     return sysclock_to_ns(sysclock);
   }
