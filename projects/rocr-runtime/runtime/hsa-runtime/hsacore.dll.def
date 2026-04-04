@@ -232,3 +232,4 @@ EXPORTS
   hsa_ext_image_data_get_info_v2
   hsa_ext_image_destroy_v2
   hsa_amd_agent_preload
+  hsa_amd_get_last_vm_fault_queue

@@ -669,6 +669,15 @@ hsa_status_t hsa_amd_agent_preload(hsa_agent_t agent, uint64_t flags) {
   CATCH;
 }
 
+hsa_status_t hsa_amd_get_last_vm_fault_queue(hsa_queue_t** queue) {
+  TRY;
+  IS_OPEN();
+  IS_BAD_PTR(queue);
+  *queue = core::Runtime::runtime_singleton_->GetVMFaultQueue();
+  return HSA_STATUS_SUCCESS;
+  CATCH;
+}
+
 hsa_status_t hsa_amd_profiling_get_dispatch_time(
     hsa_agent_t agent_handle, hsa_signal_t hsa_signal,
     hsa_amd_profiling_dispatch_time_t* time) {

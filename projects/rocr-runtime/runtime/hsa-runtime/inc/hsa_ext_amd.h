@@ -70,9 +70,10 @@
  * - 1.17 - hsa_amd_memory_async_batch_copy
  * - 1.18 - hsa_amd_pointer_info: Added alloc_flags field to hsa_amd_pointer_info_t
  * - 1.19 - hsa_amd_agent_preload
+ * - 1.20 - hsa_amd_get_last_vm_fault_queue
  */
 #define HSA_AMD_INTERFACE_VERSION_MAJOR 1
-#define HSA_AMD_INTERFACE_VERSION_MINOR 19
+#define HSA_AMD_INTERFACE_VERSION_MINOR 20
 
 #ifdef __cplusplus
 extern "C" {
@@ -4206,6 +4207,22 @@ typedef enum hsa_amd_log_flag_s {
  * initialized.
  */
 hsa_status_t hsa_amd_enable_logging(uint8_t* flags, void* file);
+
+/**
+ * @brief Retrieve the queue that caused the most recent GPU VM fault.
+ *
+ * @details After a GPU memory access fault, the per-queue exception handler
+ * records which queue triggered the fault.  This function returns that queue
+ * handle.  If no VM fault has occurred, or the faulting queue could not be
+ * determined, *queue is set to NULL.
+ *
+ * @param[out] queue Pointer to store the faulting queue handle.
+ *
+ * @retval ::HSA_STATUS_SUCCESS The function has been executed successfully.
+ *
+ * @retval ::HSA_STATUS_ERROR_INVALID_ARGUMENT @p queue is NULL.
+ */
+hsa_status_t HSA_API hsa_amd_get_last_vm_fault_queue(hsa_queue_t** queue);
 
 /** @} */
 

@@ -3495,10 +3495,32 @@ device::Signal* Device::createSignal() const { return new roc::Signal(); }
 hsa_status_t Device::BackendErrorCallBackHandler(const hsa_amd_event_t* event, void* data) {
   cl_int gpu_error = CL_SUCCESS;
   switch (event->event_type) {
-    case HSA_AMD_GPU_MEMORY_FAULT_EVENT:
+    case HSA_AMD_GPU_MEMORY_FAULT_EVENT: {
+      const auto& fault = event->memory_fault;
+      hsa_queue_t* faulting_queue = nullptr;
+      Hsa::get_last_vm_fault_queue(&faulting_queue);
+      if (faulting_queue != nullptr) {
+        LogPrintfError("Memory Fault Error on address %p (queue handle: %p, queue id: %llu)",
+                       reinterpret_cast<const void*>(fault.virtual_address),
+                       reinterpret_cast<const void*>(faulting_queue),
+                       static_cast<unsigned long long>(faulting_queue->id));
+      } else {
+        LogPrintfError("Memory Fault Error on address %p",
+                       reinterpret_cast<const void*>(fault.virtual_address));
+      }
+      for (auto* dev : amd::Device::devices()) {
+        roc::Device* roc_dev = dynamic_cast<roc::Device*>(dev);
+        if (roc_dev == nullptr) continue;
+        if (roc_dev->getBackendDevice().handle != fault.agent.handle) continue;
+        for (auto it : roc_dev->vgpus()) {
+          if (faulting_queue == nullptr || it->gpu_queue() == faulting_queue) {
+            it->AnalyzeAqlQueue();
+          }
+        }
+      }
       gpu_error = CL_INVALID_MEM_OBJECT;
-      LogError("Memory Fault Error");
       break;
+    }
     case HSA_AMD_GPU_HW_EXCEPTION_EVENT:
       gpu_error = CL_INVALID_OPERATION;
       LogError("HW Exception Error");

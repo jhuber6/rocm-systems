@@ -125,6 +125,7 @@ struct RocrEntryPoints {
   decltype(hsa_amd_memory_get_preferred_copy_engine)* hsa_amd_memory_get_preferred_copy_engine_;
   decltype(hsa_amd_ais_file_read)* hsa_amd_ais_file_read_;
   decltype(hsa_amd_ais_file_write)* hsa_amd_ais_file_write_;
+  decltype(hsa_amd_get_last_vm_fault_queue)* hsa_amd_get_last_vm_fault_queue_;
   // Image extensions
   decltype(hsa_ext_image_data_get_info_v2)* hsa_ext_image_data_get_info_v2_;
   decltype(hsa_ext_image_create_v2)* hsa_ext_image_create_v2_;
@@ -517,6 +518,10 @@ class Hsa : public amd::AllStatic {
                                      int32_t* status) {
     return ROCR_DYN(hsa_amd_ais_file_write)(handle, devicePtr, size, file_offset, size_copied,
                                             status);
+  }
+
+  static hsa_status_t get_last_vm_fault_queue(hsa_queue_t** queue) {
+    return ROCR_DYN(hsa_amd_get_last_vm_fault_queue)(queue);
   }
 
   // Image extensions

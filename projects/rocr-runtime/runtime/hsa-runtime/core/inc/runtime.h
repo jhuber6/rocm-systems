@@ -45,6 +45,7 @@
 #ifndef HSA_RUNTME_CORE_INC_RUNTIME_H_
 #define HSA_RUNTME_CORE_INC_RUNTIME_H_
 
+#include <atomic>
 #include <vector>
 #include <map>
 #include <memory>
@@ -153,6 +154,16 @@ class Runtime {
 
   // @brief Callback handler for VM fault access.
   static bool VMFaultHandler(hsa_signal_value_t val, void* arg);
+
+  // @brief Store the queue that triggered a VM fault (called from per-queue ExceptionHandler).
+  void SetVMFaultQueue(hsa_queue_t* queue) {
+    vm_fault_queue_.store(queue, std::memory_order_release);
+  }
+
+  // @brief Retrieve the queue that triggered a VM fault, if available.
+  hsa_queue_t* GetVMFaultQueue() const {
+    return vm_fault_queue_.load(std::memory_order_acquire);
+  }
 
   // @brief Print known allocations near ptr.
   static void PrintMemoryMapNear(void* ptr);
@@ -877,6 +888,10 @@ class Runtime {
 
   // @brief HSA signal to contain the VM fault event.
   unique_signal_ptr vm_fault_signal_;
+
+  // @brief Queue handle that caused the most recent VM fault.
+  // Set by the per-queue ExceptionHandler; read by VMFaultHandler.
+  std::atomic<hsa_queue_t*> vm_fault_queue_{nullptr};
 
   // @brief AMD HSA event to monitor for HW exceptions.
   unique_hsa_event_ptr hw_exception_event_;

@@ -875,6 +875,10 @@ hsa_status_t HSA_API
     return amdExtTable->hsa_amd_agent_preload_fn(agent, flags);
 }
 
+hsa_status_t HSA_API hsa_amd_get_last_vm_fault_queue(hsa_queue_t** queue) {
+  return amdExtTable->hsa_amd_get_last_vm_fault_queue_fn(queue);
+}
+
 // Mirrors Amd Extension Apis
 hsa_status_t HSA_API hsa_amd_profiling_get_dispatch_time(
     hsa_agent_t agent, hsa_signal_t signal,

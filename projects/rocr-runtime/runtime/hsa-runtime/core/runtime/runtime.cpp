@@ -2132,6 +2132,19 @@ bool Runtime::VMFaultHandler(hsa_signal_value_t val, void* arg) {
   HsaMemoryAccessFault& fault =
       vm_fault_event->EventData.EventData.MemoryAccessFault;
 
+  // The per-queue ExceptionHandler runs on a separate thread and stores the
+  // faulting queue handle.  Give it a brief window to complete before we
+  // proceed (best-effort; the process is about to abort anyway).
+  hsa_queue_t* faulting_queue = runtime_singleton_->GetVMFaultQueue();
+  if (faulting_queue == nullptr &&
+      runtime_singleton_->KfdVersion().supports_exception_debugging) {
+    auto deadline = timer::fast_clock::now() + std::chrono::milliseconds(50);
+    while (faulting_queue == nullptr && timer::fast_clock::now() < deadline) {
+      std::this_thread::yield();
+      faulting_queue = runtime_singleton_->GetVMFaultQueue();
+    }
+  }
+
   hsa_status_t custom_handler_status = HSA_STATUS_ERROR;
   auto system_event_handlers = runtime_singleton_->GetSystemEventHandlers();
   Agent* faulty_agent = nullptr;
@@ -2208,12 +2221,25 @@ bool Runtime::VMFaultHandler(hsa_signal_value_t val, void* arg) {
 
       faulty_agent = runtime_singleton_->agents_by_node_[fault.NodeId][0];
 
-      fprintf(
-          stderr,
-          "Memory access fault by GPU node-%u (Agent handle: %p) on address %p%s. Reason: %s.\n",
-          fault.NodeId, reinterpret_cast<void*>(faulty_agent->public_handle().handle),
-          reinterpret_cast<const void*>(fault.VirtualAddress),
-          (fault.Failure.Imprecise == 1) ? "(may not be exact address)" : "", reason.c_str());
+      if (faulting_queue != nullptr) {
+        fprintf(
+            stderr,
+            "Memory access fault by GPU node-%u (Agent handle: %p) on address %p%s. "
+            "Reason: %s.\n"
+            "Faulting queue handle: %p (id: %" PRIu64 ").\n",
+            fault.NodeId, reinterpret_cast<void*>(faulty_agent->public_handle().handle),
+            reinterpret_cast<const void*>(fault.VirtualAddress),
+            (fault.Failure.Imprecise == 1) ? "(may not be exact address)" : "", reason.c_str(),
+            reinterpret_cast<void*>(faulting_queue), faulting_queue->id);
+      } else {
+        fprintf(
+            stderr,
+            "Memory access fault by GPU node-%u (Agent handle: %p) on address %p%s. "
+            "Reason: %s.\n",
+            fault.NodeId, reinterpret_cast<void*>(faulty_agent->public_handle().handle),
+            reinterpret_cast<const void*>(fault.VirtualAddress),
+            (fault.Failure.Imprecise == 1) ? "(may not be exact address)" : "", reason.c_str());
+      }
 
 #ifndef NDEBUG
       PrintMemoryMapNear(reinterpret_cast<void*>(fault.VirtualAddress));
